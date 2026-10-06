@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Tomorrow:wght@600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-tomorrow: "Tomorrow", sans-serif;
+}
+
+:root {
+  /* Ink Pen Pointer Cursor (Hotspot at tip 2, 2) */
+  --ink-pen-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30' fill='none'%3E%3Cpath d='M2 2 L9 4 L14 9 L9 14 L4 9 Z' fill='%23FFFFFF' stroke='%230F0E47' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M2 2 L8 8' stroke='%230F0E47' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='8' r='1.2' fill='%230F0E47'/%3E%3Cpath d='M14 9 L22 17 L17 22 L9 14 Z' fill='%238686AC' stroke='%230F0E47' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M22 17 L27 22 L24 25 L17 22 Z' fill='%230F0E47' stroke='%230F0E47' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 2 2, default;
+
+  /* Ink Pen Pointer Cursor Active / Pressing */
+  --ink-pen-cursor-active: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30' fill='none'%3E%3Ccircle cx='2' cy='2' r='2' fill='%2334D399'/%3E%3Cpath d='M2 2 L9 4 L14 9 L9 14 L4 9 Z' fill='%23CBCBCB' stroke='%230F0E47' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M2 2 L8 8' stroke='%230F0E47' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='8' r='1.2' fill='%2334D399'/%3E%3Cpath d='M14 9 L22 17 L17 22 L9 14 Z' fill='%238686AC' stroke='%230F0E47' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M22 17 L27 22 L24 25 L17 22 Z' fill='%230F0E47' stroke='%230F0E47' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 2 2, default;
+}
+
+/* Global replacement of standard hand cursor with Ink Pen Pointer */
+html, body, div, span, button, a, svg, [role="button"], .cursor-pointer, .cursor-grab, .cursor-grabbing {
+  cursor: var(--ink-pen-cursor) !important;
+}
+
+body {
+  background-color: #030307;
+  color: #f1f5f9;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+/* Text fields keep text cursor for typing */
+input[type="text"], input[type="search"], textarea {
+  cursor: text !important;
+}
+
+/* Active drag state */
+:active, .canvas-pen-active {
+  cursor: var(--ink-pen-cursor-active) !important;
+}
+
+/* Custom scrollbar for text inside cards */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(15, 14, 71, 0.35);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(15, 14, 71, 0.6);
+}
+
+/* Subtle dot pattern on #0F0E47 background */
+.dot-grid {
+  background-image: radial-gradient(rgba(203, 203, 203, 0.16) 1.2px, transparent 1.2px);
+  background-size: 28px 28px;
+}
+
+/* Print Styles for PDF generation */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #111111 !important;
+    overflow: visible !important;
+    user-select: text !important;
+  }
+  .no-print, header, .canvas-bg, .minimap, button, nav {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
