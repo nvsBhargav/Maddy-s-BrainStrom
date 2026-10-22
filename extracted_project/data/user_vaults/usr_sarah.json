@@ -1,0 +1,28 @@
+{
+  "id": "usr_sarah",
+  "username": "sarah_researcher",
+  "name": "Dr. Sarah Connor",
+  "email": "sarah.connor@brainvault.io",
+  "role": "RESEARCHER",
+  "avatarColor": "#a855f7",
+  "timeSpent": "2h 35m",
+  "lastActive": "4:12:10 pm",
+  "tableName": "usr_usr-sarah.db",
+  "workspaces": [
+    {
+      "id": "ws-sarah-1",
+      "name": "Cybernetics Research Lab",
+      "color": "#a855f7",
+      "passwordProtected": true,
+      "password": "vault-sarah-pass",
+      "notes": [
+        {
+          "id": "note-s1",
+          "title": "Automated Defense Systems Analysis",
+          "text": "Behavioral heuristics and threat modeling for autonomous network agents operating in high-latency segmented zones.",
+          "updatedAt": "Yesterday, 6:00 PM"
+        }
+      ]
+    }
+  ]
+}

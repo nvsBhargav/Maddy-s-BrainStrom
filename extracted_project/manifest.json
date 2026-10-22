@@ -1,0 +1,17 @@
+{
+  "name": "BrainVault v3.0 · Neural Spatial Knowledge & Cognitive OS",
+  "short_name": "BrainVault v3",
+  "description": "Infinite neural spatial canvas for connected research, cyber threat intelligence, and offline knowledge vaults.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#00ff66",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
