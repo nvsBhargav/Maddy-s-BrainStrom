@@ -3,6 +3,7 @@
   "appId": "1:338498165209:web:f31c0b90a68fe3d22ea1c8",
   "apiKey": "AIzaSyBDVQHcC5M7-kebpR0dOd_7pH7FmNXzH5w",
   "authDomain": "industrial-quote-jmn89.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-maddysbrainstrom-97b71ed7-565f-4cc1-b122-39c0f53ca830",
   "storageBucket": "industrial-quote-jmn89.firebasestorage.app",
   "messagingSenderId": "338498165209",
   "measurementId": "",

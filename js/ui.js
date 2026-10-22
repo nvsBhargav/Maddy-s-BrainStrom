@@ -545,6 +545,9 @@ export class UI {
       case "news":
         this.openAdminDashboard("news");
         break;
+      case "trends":
+        this.openAdminDashboard("trends");
+        break;
       case "fit":
         this.canvas.fit();
         this.toast("Workspace magnification: complete view fitted to screen.");

@@ -14,6 +14,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23030307'/%3E%3Cpath d='M16 7a5 5 0 0 0-8.9 1.4A5 5 0 0 0 8.5 19 5 5 0 0 0 16 25V7Zm0 0a5 5 0 0 1 8.9 1.4A5 5 0 0 1 23.5 19 5 5 0 0 1 16 25V7Z' fill='none' stroke='%2322D3EE' stroke-width='1.8'/%3E%3C/svg%3E" />
   <script src="./js/three.min.js"></script>
   <script src="./js/anime.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 </head>
 <body>
   <div id="app">
@@ -26,14 +27,6 @@
         <button class="nodes-chip" data-cmd="connections" title="Canvas status">
           <span data-icon="grid" data-size="13"></span>
           <strong id="nodeCount">0</strong>
-        </button>
-        <button id="canvasStructureBtn" class="hierarchy-nav-chip" data-cmd="structure-map" title="Network Topology &amp; Connected Hierarchy (Workspaces, Nodes &amp; Subnodes)">
-          <span data-icon="share" data-size="13"></span>
-          <span class="hierarchy-chip-label">Structure Map</span>
-        </button>
-        <button id="workspaceThemesBtn" class="theme-nav-chip" data-cmd="workspace-themes" title="Change Workspace Theme &amp; Palettes">
-          <span data-icon="palette" data-size="13"></span>
-          <span class="theme-chip-label">Themes</span>
         </button>
       </div>
 
@@ -70,35 +63,36 @@
             </div>
           </div>
         </form>
-        <div class="tool-cluster">
+        <div class="tool-cluster" role="toolbar" aria-label="Canvas creation and navigation tools">
           <button class="tb-btn accent-green" data-cmd="note" title="Add custom note" aria-label="Add custom note"><span data-icon="plus"></span></button>
           <button class="tb-btn accent-amber" data-cmd="random" title="Generate random concept note" aria-label="Generate random concept"><span data-icon="dice"></span></button>
           <button class="tb-btn accent-gold" data-cmd="sticky" title="Create sticky memo" aria-label="Create sticky memo"><span data-icon="sticky"></span></button>
-          <button class="tb-btn accent-emerald" data-cmd="news" title="Live news &amp; free data hub" aria-label="Live news and data hub"><span data-icon="radio"></span></button>
+          <button class="tb-btn accent-emerald" data-cmd="news" title="Live news &amp; CISA KEV blog hub" aria-label="Live news and data hub"><span data-icon="radio"></span></button>
+          <button class="tb-btn accent-magenta" data-cmd="trends" title="📈 D3.js Vulnerability &amp; Malware Trends (2020–2026)" aria-label="Vulnerability and Malware Trends"><span data-icon="chart"></span></button>
           <button class="tb-btn accent-cyan" data-cmd="fit" title="Fit canvas to screen" aria-label="Fit canvas to screen"><span data-icon="scan"></span></button>
           <button class="tb-btn accent-violet" data-cmd="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts"><span data-icon="help"></span></button>
         </div>
       </div>
 
       <div class="topbar-right">
-        <!-- Terminal Shell Button on Top Right -->
-        <button id="cmdTerminalBtn" class="tb-btn accent-emerald terminal-chip" data-cmd="terminal" title="⚡ Cyber Terminal Shell &amp; CPU Specifications Monitor" aria-label="Terminal Shell">
-          <span data-icon="terminal"></span>
-          <span class="terminal-badge">CPU</span>
-        </button>
+        <!-- Group 1: System & Database Sync -->
+        <div class="nav-func-group" role="group" aria-label="System and Database Controls">
+          <button id="cmdTerminalBtn" class="tb-btn accent-emerald terminal-chip" data-cmd="terminal" title="⚡ Cyber Terminal Shell &amp; CPU Specifications Monitor" aria-label="Terminal Shell">
+            <span data-icon="terminal"></span>
+            <span class="terminal-badge">CPU</span>
+          </button>
+          <button id="cmdPaletteBtn" class="tb-btn accent-violet cmd-palette-chip" data-cmd="palette" title="Quick Command Palette (Ctrl+K / Cmd+K)" aria-label="Command Palette">
+            <span data-icon="terminal"></span>
+            <span class="cmd-k-badge">⌘K</span>
+          </button>
+          <button id="dbSyncBtn" class="db-sync-chip" data-cmd="dbsync" title="SQLite &amp; Firebase Firestore Sync (Click to manage sync)">
+            <span class="db-sync-dot"></span>
+            <span class="db-sync-label">DB Synced</span>
+          </button>
+        </div>
 
-        <button id="cmdPaletteBtn" class="tb-btn accent-violet cmd-palette-chip" data-cmd="palette" title="Quick Command Palette (Ctrl+K / Cmd+K)" aria-label="Command Palette">
-          <span data-icon="terminal"></span>
-          <span class="cmd-k-badge">⌘K</span>
-        </button>
-
-        <button id="dbSyncBtn" class="db-sync-chip" data-cmd="dbsync" title="SQLite Database &amp; Local DB Sync (Click to manage sync)">
-          <span class="db-sync-dot"></span>
-          <span class="db-sync-label">DB Synced</span>
-        </button>
-
-        <!-- Audio & SFX Group (SFX button arranged side to audio button) -->
-        <div class="audio-top-group">
+        <!-- Group 2: Audio & SFX Controls -->
+        <div class="audio-top-group nav-func-group" role="group" aria-label="Audio Briefing and Sound Controls">
           <button id="audioBriefingBtn" class="tb-btn accent-pink audio-voice-top-btn" data-cmd="audio-brief" title="🌸 Audio Description (Smooth &amp; Cute Voice)" aria-label="Audio Briefing">
             <span data-icon="headphones"></span>
             <span class="audio-top-badge">🌸 Cute</span>
@@ -111,11 +105,15 @@
             <span class="sfx-status-badge">ON</span>
           </button>
         </div>
-        <button class="gdocs-btn tb-icon-btn" data-cmd="gdocs" title="Save notes to Google Drive &amp; Google Docs (Alt+G)" aria-label="Google Docs Sync"><span data-icon="gdocsFile" data-size="16"></span></button>
-        <button class="tb-btn accent-indigo" data-cmd="export" title="Download cards as PDF, DOC or TXT" aria-label="Export cards"><span data-icon="download"></span></button>
-        <button class="tb-btn" data-cmd="undo" title="Undo" aria-label="Undo" disabled><span data-icon="undo"></span></button>
-        <button class="tb-btn" data-cmd="redo" title="Redo" aria-label="Redo" disabled><span data-icon="redo"></span></button>
-        <button class="tb-btn accent-red" data-cmd="reset" title="Reset canvas" aria-label="Reset canvas"><span data-icon="trash"></span></button>
+
+        <!-- Group 3: Export & Canvas History Controls -->
+        <div class="nav-func-group" role="group" aria-label="Export and Canvas History">
+          <button class="tb-btn gdocs-btn tb-icon-btn" data-cmd="gdocs" title="Save notes to Google Drive &amp; Google Docs (Alt+G)" aria-label="Google Docs Sync"><span data-icon="gdocsFile" data-size="16"></span></button>
+          <button class="tb-btn accent-indigo" data-cmd="export" title="Download cards as PDF, DOC or TXT" aria-label="Export cards"><span data-icon="download"></span></button>
+          <button class="tb-btn" data-cmd="undo" title="Undo" aria-label="Undo" disabled><span data-icon="undo"></span></button>
+          <button class="tb-btn" data-cmd="redo" title="Redo" aria-label="Redo" disabled><span data-icon="redo"></span></button>
+          <button class="tb-btn accent-red" data-cmd="reset" title="Reset canvas" aria-label="Reset canvas"><span data-icon="trash"></span></button>
+        </div>
       </div>
     </header>
 
@@ -418,6 +416,10 @@
             <button id="landingThreatCta" class="landing-cta-btn secondary accent-amber">
               <span data-icon="shield" data-size="16"></span>
               <span>Threat Center &amp; Top CVEs</span>
+            </button>
+            <button id="landingTrendsCta" class="landing-cta-btn secondary accent-magenta">
+              <span data-icon="chart" data-size="16"></span>
+              <span>📈 2020–2026 Trends</span>
             </button>
             <button id="landingNewNoteCta" class="landing-cta-btn secondary accent-emerald">
               <span data-icon="plus" data-size="14"></span>

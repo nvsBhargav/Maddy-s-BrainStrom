@@ -1,5 +1,12 @@
 // Persistence boundary. Only the store talks to this module.
-// Local browser storage is the source of truth; the optional server API is a mirror.
+// Local browser storage, Firebase Firestore, and the server API work in concert.
+import {
+  saveVaultSnapshotToFirestore,
+  fetchVaultSnapshotFromFirestore,
+  testFirestoreConnection,
+  getFirebaseMetadata,
+} from "./firebaseClient.js";
+
 const KEY = "brainvault.state.v2";
 const LEGACY = {
   workspaces: "maddys_brainvault_workspaces_v2",
@@ -81,40 +88,76 @@ function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-// --- Optional server mirror (same routes the reference uses) -----------------
+// --- Dual Firebase Firestore + Server Database Mirror ------------------------
 export async function fetchRemote() {
+  // 1. Try Firebase Firestore first
+  try {
+    const firestoreSnap = await fetchVaultSnapshotFromFirestore();
+    if (firestoreSnap && Array.isArray(firestoreSnap.workspaces) && firestoreSnap.workspaces.length > 0) {
+      return { ok: true, source: "firebase-firestore", snapshot: firestoreSnap };
+    }
+  } catch (err) {
+    console.warn("Firestore fetch fallback to server API:", err);
+  }
+
+  // 2. Fallback to Express server database (/api/db/notes)
   const res = await fetch("/api/db/notes");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 export async function pushRemote(snapshot) {
-  const res = await fetch("/api/db/notes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      workspaces: snapshot.workspaces,
-      nodes: snapshot.nodes,
-      stickies: snapshot.stickies,
-      links: snapshot.links,
-      activeWorkspaceId: snapshot.activeWorkspaceId,
+  const payload = {
+    workspaces: snapshot.workspaces || [],
+    nodes: snapshot.nodes || [],
+    stickies: snapshot.stickies || [],
+    links: snapshot.links || [],
+    activeWorkspaceId: snapshot.activeWorkspaceId || "ws-default",
+  };
+
+  const results = await Promise.allSettled([
+    saveVaultSnapshotToFirestore(payload),
+    fetch("/api/db/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(async (res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
     }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  ]);
+
+  const anySuccess = results.some((r) => r.status === "fulfilled");
+  if (!anySuccess) {
+    throw new Error("Both Firestore and Server DB sync failed");
+  }
+  return { ok: true, syncedTo: ["firebase-firestore", "server-db"] };
 }
 
 export async function statusRemote() {
-  const res = await fetch("/api/db/status");
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const [fbStatus, apiStatus] = await Promise.allSettled([
+    testFirestoreConnection(),
+    fetch("/api/db/status").then((r) => (r.ok ? r.json() : null)),
+  ]);
+
+  const fbMeta = getFirebaseMetadata();
+  const isFbOk = fbStatus.status === "fulfilled" && fbStatus.value?.ok;
+  const apiVal = apiStatus.status === "fulfilled" ? apiStatus.value : null;
+
+  return {
+    ok: isFbOk || Boolean(apiVal?.ok),
+    engine: "Firebase Firestore + Node Server DB",
+    database: `${fbMeta.projectId} (${fbMeta.databaseId})`,
+    firebaseConnected: isFbOk,
+    serverConnected: Boolean(apiVal?.ok),
+  };
 }
 
-export async function saveToCloudGDrive(doc) {
+export async function saveToCloudGDrive(docData) {
   const res = await fetch("/api/gdrive/save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(doc),
+    body: JSON.stringify(docData),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
