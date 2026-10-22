@@ -9,7 +9,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   
   app.use(express.json({ limit: "50mb" }));
 
@@ -21,7 +21,7 @@ async function startServer() {
   }
 
   const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
+    apiKey: process.env.GEMINI_API_KEY || "",
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
@@ -37,7 +37,7 @@ async function startServer() {
       }
 
       const textResponse = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are an infinite spatial-knowledge-engine generator. Respond to the user's query by generating AI content in a specific JSON format. The format must contain:\n1. 'text': AI-generated explanatory text detailing the topic. Use markdown if necessary, but keep it brief, engaging, and impactful (2-3 short paragraphs). CRITICAL: You MUST wrap 2 to 4 key concepts or interesting terms in your text as markdown links using the exact format `[Search Term](Search Term)`, so users can click them to branch off and explore that topic further!\n2. 'asciiArt': A clean, creative, and evocative 8 to 12 line monochrome ASCII art diagram, schematic, or pictorial symbol representing the topic.\n3. 'prompts': An array of exactly 3 concise string items containing suggested follow-up questions or sub-topics.",
@@ -101,11 +101,8 @@ async function startServer() {
       }
 
       const imageResponse = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite-image',
+        model: 'gemini-2.5-flash',
         contents: { parts },
-        config: {
-          imageConfig: { aspectRatio: "4:3" }
-        } as any,
       });
 
       let base64EncodeString = "";

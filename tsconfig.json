@@ -22,5 +22,10 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "extracted_project",
+    "node_modules",
+    "dist"
+  ]
 }
