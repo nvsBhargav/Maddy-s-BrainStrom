@@ -1,6 +1,6 @@
 {
-  "name": "Interactive Spatial Concept Canvas",
-  "description": "An infinite spatial canvas for exploring interconnected concepts using AI-generated text and contextual imagery.",
+  "name": "BrainVault v3.0 · Neural Spatial Knowledge & Cognitive OS",
+  "description": "An infinite neural spatial canvas for exploring interconnected concepts, threat intelligence, 5 alignment modes, and cyber sound FX.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

@@ -1,0 +1,12 @@
+{
+  "id": "usr_maya",
+  "username": "maya_ai",
+  "name": "Maya Patel",
+  "email": "maya.patel@brainvault.io",
+  "role": "DEVELOPER",
+  "avatarColor": "#f59e0b",
+  "timeSpent": "1h 4m",
+  "lastActive": "1:15:30 pm",
+  "tableName": "usr_usr-maya.db",
+  "workspaces": []
+}
