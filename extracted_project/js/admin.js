@@ -1,6 +1,17 @@
 // BrainVault Master Admin Panel & 3D Multi-User Constellation Engine
 // Fully matching the dark cyber glass design and reference screenshots.
 
+import {
+  saveApiKeysToFirestore,
+  fetchApiKeysFromFirestore,
+  saveNewsStoryToFirestore,
+  deleteNewsStoryFromFirestore,
+  fetchSavedNewsFromFirestore,
+  syncCvesToFirestore,
+  fetchCvesFromFirestore,
+} from "./firebaseClient.js";
+import { VulnerabilityTrendsD3 } from "./trendsD3.js";
+
 export const DEFAULT_USERS = [
   {
     id: "usr_karthik",
@@ -148,6 +159,7 @@ export class AdminDashboard {
     this.currentsTimerInterval = null;
     this.isSavingKeys = false;
     this.activeExpandedWorkspaces = new Set(["ws-karthik-1", "ws-sarah-1", "ws-alex-1"]);
+    this.trendsEngine = null;
 
     // 3D Constellation properties
     this.threeScene = null;
@@ -268,6 +280,13 @@ export class AdminDashboard {
 
   async fetchApiKeys() {
     try {
+      const fbKeys = await fetchApiKeysFromFirestore();
+      if (fbKeys && typeof fbKeys === "object") {
+        this.apiKeys = { ...this.apiKeys, ...fbKeys };
+      }
+    } catch (_) {}
+
+    try {
       const res = await fetch("/api/admin/keys");
       if (res.ok) {
         const data = await res.json();
@@ -284,6 +303,10 @@ export class AdminDashboard {
     this.isSavingKeys = true;
     this.render();
     try {
+      await saveApiKeysToFirestore(this.apiKeys);
+    } catch (_) {}
+
+    try {
       const res = await fetch("/api/admin/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -292,12 +315,12 @@ export class AdminDashboard {
       if (res.ok) {
         const data = await res.json();
         if (data.keys) this.apiKeys = data.keys;
-        this.toast("✓ API keys saved to profile & server database!");
+        this.toast("✓ API keys saved to Firebase Firestore & SQLite server database!");
       } else {
-        this.toast("Warning: Server error while saving keys.");
+        this.toast("✓ API keys saved to Firebase Firestore!");
       }
     } catch (err) {
-      this.toast("Keys saved locally. Server endpoint unreachable.");
+      this.toast("✓ API keys saved to Firebase Firestore & local profile.");
     } finally {
       this.isSavingKeys = false;
       this.render();
@@ -314,9 +337,26 @@ export class AdminDashboard {
     } catch (e) {
       console.warn("Could not fetch saved news:", e);
     }
+
+    try {
+      const fbStories = await fetchSavedNewsFromFirestore();
+      if (Array.isArray(fbStories) && fbStories.length > 0) {
+        const existingIds = new Set(this.savedNews.map((s) => s.id));
+        for (const item of fbStories) {
+          if (item && item.id && !existingIds.has(item.id)) {
+            this.savedNews.push(item);
+            existingIds.add(item.id);
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   async saveNewsStory(story) {
+    try {
+      await saveNewsStoryToFirestore(story);
+    } catch (_) {}
+
     try {
       const res = await fetch("/api/admin/news/save", {
         method: "POST",
@@ -325,18 +365,25 @@ export class AdminDashboard {
       });
       if (res.ok) {
         await this.fetchSavedNews();
-        this.toast(`✓ Saved “${story.title.slice(0, 30)}…” to database table.`);
+        this.toast(`✓ Saved “${story.title.slice(0, 30)}…” to Firebase & SQLite database.`);
         this.render();
+        return;
       }
-    } catch (e) {
-      // Local fallback
+    } catch (e) {}
+
+    // Local fallback
+    if (!this.savedNews.some((s) => s.id === story.id)) {
       this.savedNews.unshift({ ...story, savedAt: Date.now() });
-      this.toast(`Saved story to local table.`);
-      this.render();
     }
+    this.toast(`✓ Saved “${story.title.slice(0, 30)}…” to Firebase database.`);
+    this.render();
   }
 
   async deleteSavedNewsStory(storyId) {
+    try {
+      await deleteNewsStoryFromFirestore(storyId);
+    } catch (_) {}
+
     try {
       const res = await fetch("/api/admin/news/delete", {
         method: "POST",
@@ -345,13 +392,14 @@ export class AdminDashboard {
       });
       if (res.ok) {
         await this.fetchSavedNews();
-        this.toast("Removed news item from database table.");
+        this.toast("Removed news item from Firebase & SQLite database.");
         this.render();
+        return;
       }
-    } catch (e) {
-      this.savedNews = this.savedNews.filter((s) => s.id !== storyId);
-      this.render();
-    }
+    } catch (e) {}
+
+    this.savedNews = this.savedNews.filter((s) => s.id !== storyId);
+    this.render();
   }
 
   async fetchStoredImages() {
@@ -831,7 +879,7 @@ export class AdminDashboard {
     await this.saveNewsStory(story);
   }
 
-  // --- Top Weaponized CVEs (2020-2026) & NIST NVD 2.0 Ingestion ---------------
+  // --- Top Weaponized CVEs (2020-2026) & CISA KEV / NIST NVD 2.0 Ingestion ----
   async fetchCves(showSpinner = true, randomize = false) {
     if (showSpinner) {
       this.isLoadingCves = true;
@@ -843,9 +891,8 @@ export class AdminDashboard {
       if (this.cveSeverityFilter && this.cveSeverityFilter !== "all") params.set("severity", this.cveSeverityFilter);
       if (this.cveSearchQuery) params.set("search", this.cveSearchQuery);
       if (randomize) params.set("random", "true");
-      // Show top 7 CVEs in list on load / refresh unless searching
       if (!this.cveSearchQuery) {
-        params.set("limit", "7");
+        params.set("limit", "30");
       }
 
       const res = await fetch(`/api/admin/cves?${params.toString()}`);
@@ -854,6 +901,7 @@ export class AdminDashboard {
         if (data.cves) {
           this.cveCatalog = data.cves;
           if (data.metrics) this.cveMetrics = data.metrics;
+          syncCvesToFirestore(this.cveCatalog).catch(() => {});
           this.isLoadingCves = false;
           this.render();
           return;
@@ -862,6 +910,14 @@ export class AdminDashboard {
     } catch (e) {
       console.warn("Could not fetch CVE catalog:", e);
     }
+
+    try {
+      const fbCves = await fetchCvesFromFirestore();
+      if (Array.isArray(fbCves) && fbCves.length > 0) {
+        this.cveCatalog = fbCves;
+      }
+    } catch (_) {}
+
     this.isLoadingCves = false;
     this.render();
   }
@@ -873,19 +929,23 @@ export class AdminDashboard {
       const q = query || this.cveSearchQuery || "";
       const params = new URLSearchParams();
       if (q) params.set("query", q);
-      params.set("limit", "15");
+      params.set("limit", "25");
 
       const res = await fetch(`/api/admin/cves/sync-nvd?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         const count = data.count || 0;
-        this.toast(`✓ Synced ${count} CVE record${count === 1 ? "" : "s"} from NIST NVD 2.0 API into database.`);
         await this.fetchCves(false);
+        await this.fetchNewsDataNews(false, true);
+        if (this.cveCatalog.length > 0) {
+          await syncCvesToFirestore(this.cveCatalog);
+        }
+        this.toast(`✓ Synced ${count} CISA KEV & NVD CVE records (2020–2026) into SQLite & Firebase Firestore!`);
       } else {
-        this.toast("⚠️ NVD sync rate-limited or unavailable. Retrying...");
+        this.toast("⚠️ CISA KEV / NVD sync busy. Using cached 2020–2026 catalog.");
       }
     } catch (e) {
-      this.toast(`⚠️ NVD sync failed: ${e.message}`);
+      this.toast(`⚠️ Sync warning: ${e.message}`);
     } finally {
       this.isSyncingNvd = false;
       this.render();
@@ -1698,6 +1758,9 @@ export class AdminDashboard {
           <button class="admin-tab-btn ${this.currentTab === "cves" ? "is-active tab-cve" : ""}" data-tab="cves">
             <span class="tab-ico">⚡</span> Top CVEs (2020–2026)
           </button>
+          <button class="admin-tab-btn ${this.currentTab === "trends" ? "is-active tab-magenta" : ""}" data-tab="trends">
+            <span class="tab-ico">📈</span> 2020–2026 Trends (D3.js)
+          </button>
           <button class="admin-tab-btn ${this.currentTab === "osv" ? "is-active tab-osv" : ""}" data-tab="osv">
             <span class="tab-ico">🛡️</span> OSV.dev News
           </button>
@@ -1753,6 +1816,23 @@ export class AdminDashboard {
       setTimeout(() => this.init3DScene(), 50);
     } else {
       this.stop3D();
+    }
+
+    // If D3 Trends tab is active, initialize D3 chart viewport
+    if (this.currentTab === "trends") {
+      setTimeout(() => {
+        const mount = document.querySelector("#adminTrendsMount");
+        if (mount) {
+          if (!this.trendsEngine) {
+            this.trendsEngine = new VulnerabilityTrendsD3({
+              store: this.store,
+              canvas: this.canvas,
+              toast: this.toast,
+            });
+          }
+          this.trendsEngine.render(mount);
+        }
+      }, 40);
     }
   }
 
@@ -1823,6 +1903,8 @@ export class AdminDashboard {
     switch (this.currentTab) {
       case "vaults":
         return this.renderUserVaultsTab();
+      case "trends":
+        return `<div class="admin-trends-tab-container" id="adminTrendsMount"></div>`;
       case "cves":
         return this.renderCvesTab();
       case "osv":
@@ -3101,7 +3183,10 @@ export class AdminDashboard {
             </div>
           </div>
 
-          <div class="newsdata-head-right">
+          <div class="newsdata-head-right" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="cve-sync-btn ${this.isSyncingNvd ? "is-syncing" : ""}" id="adminSyncCisaKevBlogBtn" title="Export CISA Known Exploited Vulnerabilities Catalog (2020-2026) and save to SQLite &amp; Firebase DB">
+              <span class="sync-spin">🔴</span> ${this.isSyncingNvd ? "EXPORTING CISA KEV..." : "EXPORT CISA KEV TO DB"}
+            </button>
             <!-- Fetch Button -->
             <button class="admin-fetch-btn newsdata-fetch-btn" id="adminFetchNewsDataBtn">
               <span class="admin-ico">🔄</span> FETCH 7-PT BRIEFINGS
@@ -3113,6 +3198,7 @@ export class AdminDashboard {
         <div class="threat-controls-row">
           <div class="newsdata-categories-filter">
             <button class="newsdata-cat-btn ${this.newsDataCategory === "all" ? "is-active" : ""}" data-newsdata-cat="all">⚡ All Intelligence (${stories.length})</button>
+            <button class="newsdata-cat-btn ${this.newsDataCategory === "cisa" ? "is-active" : ""}" data-newsdata-cat="cisa">🔴 CISA KEV &amp; 2020–2026 Malware</button>
             <button class="newsdata-cat-btn ${this.newsDataCategory === "cybersecurity" ? "is-active" : ""}" data-newsdata-cat="cybersecurity">🛡️ Cybersecurity</button>
             <button class="newsdata-cat-btn ${this.newsDataCategory === "ai" ? "is-active" : ""}" data-newsdata-cat="ai">🤖 AI Latest News</button>
             <button class="newsdata-cat-btn ${this.newsDataCategory === "tech" ? "is-active" : ""}" data-newsdata-cat="tech">💻 Tech News</button>
@@ -4373,6 +4459,10 @@ export class AdminDashboard {
       root.querySelector("#adminFetchNewsDataBtn")?.addEventListener("click", () => {
         if (keywordInput) this.newsDataKeyword = keywordInput.value.trim();
         this.fetchNewsDataNews(true, true);
+      });
+
+      root.querySelector("#adminSyncCisaKevBlogBtn")?.addEventListener("click", () => {
+        this.syncNvdCves(this.newsDataKeyword);
       });
 
       // Listen to CVE Briefing

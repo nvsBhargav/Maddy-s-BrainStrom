@@ -12,8 +12,18 @@
   <link rel="manifest" href="./manifest.json" />
   <meta name="theme-color" content="#00ff66" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23030307'/%3E%3Cpath d='M16 7a5 5 0 0 0-8.9 1.4A5 5 0 0 0 8.5 19 5 5 0 0 0 16 25V7Zm0 0a5 5 0 0 1 8.9 1.4A5 5 0 0 1 23.5 19 5 5 0 0 1 16 25V7Z' fill='none' stroke='%2322D3EE' stroke-width='1.8'/%3E%3C/svg%3E" />
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js"
+    }
+  }
+  </script>
   <script src="./js/three.min.js"></script>
   <script src="./js/anime.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 </head>
 <body>
   <div id="app">
@@ -26,6 +36,14 @@
         <button class="nodes-chip" data-cmd="connections" title="Canvas status">
           <span data-icon="grid" data-size="13"></span>
           <strong id="nodeCount">0</strong>
+        </button>
+        <button id="canvasStructureBtn" class="hierarchy-nav-chip" data-cmd="structure-map" title="Network Topology &amp; Connected Hierarchy (Workspaces, Nodes &amp; Subnodes)">
+          <span data-icon="share" data-size="13"></span>
+          <span class="hierarchy-chip-label">Structure Map</span>
+        </button>
+        <button id="workspaceThemesBtn" class="theme-nav-chip" data-cmd="workspace-themes" title="Change Workspace Theme &amp; Palettes">
+          <span data-icon="palette" data-size="13"></span>
+          <span class="theme-chip-label">Themes</span>
         </button>
       </div>
 
@@ -67,6 +85,7 @@
           <button class="tb-btn accent-amber" data-cmd="random" title="Generate random concept note" aria-label="Generate random concept"><span data-icon="dice"></span></button>
           <button class="tb-btn accent-gold" data-cmd="sticky" title="Create sticky memo" aria-label="Create sticky memo"><span data-icon="sticky"></span></button>
           <button class="tb-btn accent-emerald" data-cmd="news" title="Live news &amp; free data hub" aria-label="Live news and data hub"><span data-icon="radio"></span></button>
+          <button class="tb-btn accent-magenta" data-cmd="trends" title="📈 D3.js Vulnerability &amp; Malware Trends (2020–2026)" aria-label="Vulnerability and Malware Trends"><span data-icon="chart"></span></button>
           <button class="tb-btn accent-cyan" data-cmd="fit" title="Fit canvas to screen" aria-label="Fit canvas to screen"><span data-icon="scan"></span></button>
           <button class="tb-btn accent-violet" data-cmd="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts"><span data-icon="help"></span></button>
         </div>
@@ -410,6 +429,10 @@
             <button id="landingThreatCta" class="landing-cta-btn secondary accent-amber">
               <span data-icon="shield" data-size="16"></span>
               <span>Threat Center &amp; Top CVEs</span>
+            </button>
+            <button id="landingTrendsCta" class="landing-cta-btn secondary accent-magenta">
+              <span data-icon="chart" data-size="16"></span>
+              <span>📈 2020–2026 Trends</span>
             </button>
             <button id="landingNewNoteCta" class="landing-cta-btn secondary accent-emerald">
               <span data-icon="plus" data-size="14"></span>
