@@ -810,149 +810,382 @@ export function buildInteractiveHtml({ workspace, nodes = [], links = [], sticki
 }
 
 // --- Obsidian Markdown Vault Generator ---------------------------------------
+function safeObsidianFilename(title) {
+  return String(title || "Untitled Note")
+    .replace(/[/\\:*?"<>|#^[\]]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80) || "Untitled Note";
+}
+
+function escapeYamlString(val) {
+  return String(val || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 export function buildObsidianVaultZip({ workspace, nodes = [], links = [], stickies = [] }) {
   const wsName = workspace?.name || "BrainVault";
-  const base = slug(wsName);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const files = [];
 
-  // 1. Index Note (00-Workspace-Index.md)
+  // Helper to compute node hierarchy depth & breadcrumb path
+  function getHierarchyInfo(node) {
+    let level = 0;
+    let curr = node;
+    const pathItems = [node.prompt];
+    const visited = new Set([node.id]);
+    while (curr.parentId && byId.has(curr.parentId) && level < 25) {
+      curr = byId.get(curr.parentId);
+      if (visited.has(curr.id)) break; // cycle protection
+      visited.add(curr.id);
+      pathItems.unshift(curr.prompt);
+      level++;
+    }
+    return { level, path: pathItems.join(" / ") };
+  }
+
+  // 1. Individual Card Notes in Notes/
+  for (const n of nodes) {
+    const parentNode = n.parentId ? byId.get(n.parentId) : null;
+    const childNodes = nodes.filter((cand) => cand.parentId === n.id);
+    
+    // Explicit linked concepts
+    const outlinks = links
+      .filter((l) => l.sourceId === n.id && byId.has(l.targetId))
+      .map((l) => byId.get(l.targetId));
+    const inlinks = links
+      .filter((l) => l.targetId === n.id && byId.has(l.sourceId))
+      .map((l) => byId.get(l.sourceId));
+    const relatedMap = new Map();
+    [...outlinks, ...inlinks].forEach((r) => {
+      if (r.id !== n.id) relatedMap.set(r.id, r);
+    });
+    const relatedNodes = Array.from(relatedMap.values());
+
+    const { level, path } = getHierarchyInfo(n);
+    const safeTitle = safeObsidianFilename(n.prompt);
+    const parentSafe = parentNode ? safeObsidianFilename(parentNode.prompt) : null;
+
+    // Preserving hierarchical relationships as YAML frontmatter links
+    const cardFrontmatter = [
+      "---",
+      `id: "${n.id}"`,
+      `title: "${escapeYamlString(n.prompt)}"`,
+      `type: "${n.isCustom ? "custom_note" : n.parentId ? "sub_node" : "primary_node"}"`,
+      `workspace: "${escapeYamlString(wsName)}"`,
+      `hierarchy_level: ${level}`,
+      `hierarchy_path: "${escapeYamlString(path)}"`,
+      parentNode ? `parent: "[[Notes/${parentSafe}|${escapeYamlString(parentNode.prompt)}]]"` : "parent: null",
+      parentNode ? `parent_title: "${escapeYamlString(parentNode.prompt)}"` : null,
+      "children:",
+      ...(childNodes.length
+        ? childNodes.map((c) => `  - "[[Notes/${safeObsidianFilename(c.prompt)}|${escapeYamlString(c.prompt)}]]"`)
+        : ["  []"]),
+      "connected_links:",
+      ...(relatedNodes.length
+        ? relatedNodes.map((r) => `  - "[[Notes/${safeObsidianFilename(r.prompt)}|${escapeYamlString(r.prompt)}]]"`)
+        : ["  []"]),
+      "tags:",
+      "  - brainvault",
+      "  - spatial-canvas",
+      ...(n.tags && n.tags.length ? n.tags.map((t) => `  - "${escapeYamlString(t.replace(/^#/, ""))}"`) : ["  - research"]),
+      `color: "${n.color || "#00ff66"}"`,
+      `created: "${new Date().toISOString()}"`,
+      `updated: "${new Date().toISOString()}"`,
+      "aliases:",
+      `  - "${escapeYamlString(n.prompt)}"`,
+      "---",
+    ].filter((l) => l !== null);
+
+    const bodyLines = [
+      ...cardFrontmatter,
+      "",
+      `# ${n.prompt}`,
+      "",
+      `> [!info] 🌿 Hierarchical Knowledge Branch`,
+      `> - **Workspace:** [[00-Workspace-Index|${wsName}]]`,
+      `> - **Hierarchy Depth:** Level ${level} (${n.isCustom ? "Custom Note" : n.parentId ? "Sub-Node" : "Primary Root Node"})`,
+      `> - **Knowledge Path:** \`${path}\``,
+      parentNode ? `> - **Parent Branch:** [[Notes/${parentSafe}|${parentNode.prompt}]]` : `> - **Parent:** *(Root Constellation Node)*`,
+      "",
+    ];
+
+    if (childNodes.length) {
+      bodyLines.push(
+        `### 🌿 Sub-Node Branches (${childNodes.length})`,
+        ...childNodes.map((c) => `- [[Notes/${safeObsidianFilename(c.prompt)}|${c.prompt}]]`),
+        ""
+      );
+    }
+
+    if (relatedNodes.length) {
+      bodyLines.push(
+        `### 🔗 Connected Concepts (${relatedNodes.length})`,
+        ...relatedNodes.map((r) => `- [[Notes/${safeObsidianFilename(r.prompt)}|${r.prompt}]]`),
+        ""
+      );
+    }
+
+    bodyLines.push(
+      "---",
+      "",
+      "## 📖 Research Notes & Intelligence",
+      "",
+      n.text ? n.text.trim() : "*(No extended research notes written yet)*",
+      "",
+      "---",
+      `*Exported from BrainVault Spatial Knowledge Engine on ${new Date().toLocaleString()}*`
+    );
+
+    files.push({
+      path: `Notes/${safeTitle}.md`,
+      content: bodyLines.join("\n"),
+    });
+  }
+
+  // 2. Sticky Memos in Memos/
+  stickies.forEach((s, idx) => {
+    const memoContent = [
+      "---",
+      `id: "${s.id || `memo-${idx + 1}`}"`,
+      `type: "sticky_memo"`,
+      `workspace: "${escapeYamlString(wsName)}"`,
+      `color: "${s.color || "#FEF08A"}"`,
+      "tags:",
+      "  - brainvault",
+      "  - sticky-memo",
+      `created: "${new Date().toISOString()}"`,
+      "---",
+      "",
+      `# 📌 Sticky Memo ${idx + 1}`,
+      "",
+      `> [!note] Workspace Memo`,
+      `> Recorded in **[[00-Workspace-Index|${wsName}]]**`,
+      "",
+      s.text ? s.text.trim() : "*(Empty memo)*",
+      "",
+      "---",
+      `*BrainVault Memo #${idx + 1}*`,
+    ].join("\n");
+
+    files.push({
+      path: `Memos/memo-${idx + 1}.md`,
+      content: memoContent,
+    });
+  });
+
+  // 3. Hierarchical Constellation Tree for Index
+  const rootNodes = nodes.filter((n) => !n.parentId);
+  const orphanSubNodes = nodes.filter((n) => n.parentId && !byId.has(n.parentId));
+
+  function renderTree(node, depth = 0) {
+    const indent = "  ".repeat(depth);
+    const safeTitle = safeObsidianFilename(node.prompt);
+    const badge = node.isCustom ? "[Custom Note]" : node.parentId ? "[Sub-Node]" : "[Primary Root]";
+    const children = nodes.filter((c) => c.parentId === node.id);
+    let str = `${indent}- ${depth === 0 ? "🌿" : "🔗"} **[[Notes/${safeTitle}|${node.prompt}]]** \`${badge}\`\n`;
+    for (const child of children) {
+      str += renderTree(child, depth + 1);
+    }
+    return str;
+  }
+
+  let hierarchyMarkdownTree = "";
+  for (const root of rootNodes) {
+    hierarchyMarkdownTree += renderTree(root, 0);
+  }
+  if (orphanSubNodes.length) {
+    hierarchyMarkdownTree += "\n### Unattached Nodes\n";
+    for (const orphan of orphanSubNodes) {
+      hierarchyMarkdownTree += renderTree(orphan, 0);
+    }
+  }
+
+  // 4. Index Note (00-Workspace-Index.md)
   const indexLines = [
     "---",
-    `title: "${wsName}"`,
-    `vault_type: brainvault-knowledge-orbit`,
+    `title: "${escapeYamlString(wsName)}"`,
+    `vault_type: "brainvault-obsidian-vault"`,
     `total_nodes: ${nodes.length}`,
     `total_stickies: ${stickies.length}`,
+    `total_links: ${links.length}`,
     `exported_at: "${new Date().toISOString()}"`,
     "tags:",
     "  - brainvault",
     "  - knowledge-graph",
-    "  - cybersecurity",
+    "  - obsidian-vault",
+    "  - index",
     "---",
     "",
     `# 🧠 ${wsName} — Master Index & Knowledge Orbit`,
     "",
-    `> Exported from BrainVault Spatial Knowledge Engine on **${new Date().toLocaleString()}**.`,
+    `> **BrainVault Spatial Knowledge Engine** · Offline Obsidian Vault Archive  `,
+    `> Exported on **${new Date().toLocaleString()}** | Total Topics: **${nodes.length}** | Memos: **${stickies.length}**`,
     "",
-    "## 📊 Vault Summary",
-    `- **Active Workspace:** ${wsName}`,
-    `- **Cards / Conceptual Nodes:** ${nodes.length}`,
-    `- **Explicit Semantic Links:** ${links.length}`,
-    `- **Sticky Memos:** ${stickies.length}`,
+    "## 📊 Vault Structure Overview",
+    `- **📂 Notes/** — Individual concept cards with YAML frontmatter links (\`parent:\`, \`children:\`, \`connected_links:\`)`,
+    `- **📂 Memos/** — Floating sticky memos with frontmatter and tags`,
+    `- **📂 Canvas/** — Native \`BrainVault.canvas\` 2D spatial layout with visual node coordinates and connectors`,
+    `- **📂 .obsidian/** — Vault configuration with pre-styled Graph View colors and Properties types`,
     "",
-    "## 📑 Knowledge Nodes & Branches",
-    "| Card Title | Category / Tags | Parent Branch | Connected Outlinks |",
-    "|---|---|---|---|",
+    "## 🌳 Hierarchical Knowledge Tree",
+    hierarchyMarkdownTree || "*(No nodes recorded in this workspace)*",
+    "",
+    "## 📑 Master Catalog Table",
+    "| Concept Note | Hierarchy Type | Parent Branch | Sub-Branches | Tags |",
+    "|---|---|---|---|---|",
     ...nodes.map((n) => {
-      const cardFile = `${slug(n.prompt)}.md`;
+      const safeTitle = safeObsidianFilename(n.prompt);
       const parentNode = n.parentId ? byId.get(n.parentId) : null;
-      const parentLink = parentNode ? `[[Cards/${slug(parentNode.prompt)}|${parentNode.prompt}]]` : "*(Root)*";
-      const outlinks = links
-        .filter((l) => l.sourceId === n.id && byId.has(l.targetId))
-        .map((l) => `[[Cards/${slug(byId.get(l.targetId).prompt)}|${byId.get(l.targetId).prompt}]]`)
-        .join(", ") || "—";
-      const tagStr = (n.tags || []).map((t) => `#${t}`).join(" ") || "—";
-      return `| [[Cards/${cardFile}|${n.prompt}]] | ${tagStr} | ${parentLink} | ${outlinks} |`;
+      const parentLink = parentNode ? `[[Notes/${safeObsidianFilename(parentNode.prompt)}|${parentNode.prompt}]]` : "*(Root)*";
+      const childCount = nodes.filter((c) => c.parentId === n.id).length;
+      const tagStr = (n.tags || []).map((t) => `#${t.replace(/^#/, "")}`).join(" ") || "#research";
+      const typeStr = n.isCustom ? "Custom Note" : n.parentId ? "Sub-Node" : "Primary";
+      return `| [[Notes/${safeTitle}|${n.prompt}]] | \`${typeStr}\` | ${parentLink} | ${childCount} children | ${tagStr} |`;
     }),
     "",
   ];
 
   if (stickies.length) {
-    indexLines.push("## 📝 Sticky Memos", ...stickies.map((s, idx) => `- [[Stickies/memo-${idx + 1}|Memo ${idx + 1}]]: ${(s.text || "").slice(0, 80)}...`), "");
+    indexLines.push(
+      "## 📝 Sticky Memos",
+      ...stickies.map((s, idx) => `- [[Memos/memo-${idx + 1}|Memo ${idx + 1}]]: ${(s.text || "").replace(/\n/g, " ").slice(0, 90)}...`),
+      ""
+    );
   }
+
+  indexLines.push(
+    "## 🚀 Obsidian Quick-Start Guide",
+    "1. **Open in Obsidian**: Click *Open folder as vault* in Obsidian and choose this unzipped folder.",
+    "2. **Interactive Canvas**: Open `Canvas/BrainVault.canvas` to see your 2D spatial cards arranged visually with directional arrows.",
+    "3. **Graph View**: Press `Ctrl+G` (or `Cmd+G` on Mac) to explore the full neural graph colored by hierarchy.",
+    "4. **Properties & Backlinks**: All notes include rich YAML frontmatter linking parent, child, and related notes.",
+    "",
+    "---",
+    `*Generated by BrainVault v3.0 · Neural Spatial Knowledge & Cognitive OS*`
+  );
 
   files.push({
     path: "00-Workspace-Index.md",
     content: indexLines.join("\n"),
   });
 
-  // 2. Individual Card Notes in Cards/
-  for (const n of nodes) {
-    const parentNode = n.parentId ? byId.get(n.parentId) : null;
-    const parentSlug = parentNode ? slug(parentNode.prompt) : "";
-    const childNodes = nodes.filter((cand) => cand.parentId === n.id);
-    const relatedLinks = links
-      .filter((l) => l.sourceId === n.id && byId.has(l.targetId))
-      .map((l) => byId.get(l.targetId));
+  // 5. Native Obsidian Visual Canvas (Canvas/BrainVault.canvas)
+  const canvasNodes = [];
+  const canvasEdges = [];
 
-    const cardLines = [
-      "---",
-      `id: "${n.id}"`,
-      `title: "${n.prompt}"`,
-      `workspace: "${wsName}"`,
-      `color: "${n.color || "#e0f2fe"}"`,
-      n.parentId ? `parent: "${parentSlug}"` : null,
-      "tags:",
-      ...(n.tags && n.tags.length ? n.tags.map((t) => `  - ${t}`) : ["  - research"]),
-      `created_at: "${new Date().toISOString()}"`,
-      "---",
-      "",
-      `# ${n.prompt}`,
-      "",
-    ].filter((l) => l !== null);
-
-    if (parentNode) {
-      cardLines.push(`**Parent Branch:** [[Cards/${parentSlug}|${parentNode.prompt}]]`, "");
-    }
-
-    if (childNodes.length) {
-      cardLines.push(
-        "### 🌿 Sub-Node Branches",
-        ...childNodes.map((c) => `- [[Cards/${slug(c.prompt)}|${c.prompt}]]`),
-        ""
-      );
-    }
-
-    if (relatedLinks.length) {
-      cardLines.push(
-        "### 🔗 Connected Concepts",
-        ...relatedLinks.map((r) => `- [[Cards/${slug(r.prompt)}|${r.prompt}]]`),
-        ""
-      );
-    }
-
-    cardLines.push("---", "", "## 📖 Research Notes & Intelligence", "", n.text || "*(No extended content recorded)*", "");
-
-    files.push({
-      path: `Cards/${slug(n.prompt)}.md`,
-      content: cardLines.join("\n"),
+  nodes.forEach((n, idx) => {
+    const safeTitle = safeObsidianFilename(n.prompt);
+    canvasNodes.push({
+      id: `node-${n.id || idx}`,
+      type: "file",
+      file: `Notes/${safeTitle}.md`,
+      x: Math.round(n.x || (idx % 4) * 440),
+      y: Math.round(n.y || Math.floor(idx / 4) * 360),
+      width: Math.round(n.width || 420),
+      height: Math.round(n.height || 280),
+      color: n.parentId ? "4" : "2", // 2 = green, 4 = cyan in Obsidian
     });
-  }
 
-  // 3. Stickies in Stickies/
+    if (n.parentId && byId.has(n.parentId)) {
+      canvasEdges.push({
+        id: `edge-parent-${n.id}`,
+        fromNode: `node-${n.parentId}`,
+        fromSide: "right",
+        toNode: `node-${n.id}`,
+        toSide: "left",
+        color: "2",
+      });
+    }
+  });
+
+  // Add explicit links to canvas
+  links.forEach((l, idx) => {
+    if (byId.has(l.sourceId) && byId.has(l.targetId)) {
+      canvasEdges.push({
+        id: `edge-link-${idx}`,
+        fromNode: `node-${l.sourceId}`,
+        fromSide: "bottom",
+        toNode: `node-${l.targetId}`,
+        toSide: "top",
+        color: "5", // 5 = violet in Obsidian
+      });
+    }
+  });
+
+  // Add sticky memos to canvas
   stickies.forEach((s, idx) => {
-    const stickyContent = [
-      "---",
-      `type: sticky-memo`,
-      `color: "${s.color || "#FEF08A"}"`,
-      `workspace: "${wsName}"`,
-      "tags:",
-      "  - sticky",
-      "  - brainvault-memo",
-      "---",
-      "",
-      `# 📌 Sticky Memo ${idx + 1}`,
-      "",
-      s.text || "*(Empty memo)*",
-      "",
-    ].join("\n");
-
-    files.push({
-      path: `Stickies/memo-${idx + 1}.md`,
-      content: stickyContent,
+    canvasNodes.push({
+      id: `sticky-${s.id || idx}`,
+      type: "text",
+      text: s.text || "Memo",
+      x: Math.round(s.x || idx * 260),
+      y: Math.round(s.y || -320),
+      width: 240,
+      height: 180,
+      color: "6", // 6 = yellow in Obsidian
     });
   });
 
-  // 4. Obsidian app configuration (.obsidian/app.json)
+  files.push({
+    path: "Canvas/BrainVault.canvas",
+    content: JSON.stringify({ nodes: canvasNodes, edges: canvasEdges }, null, 2),
+  });
+
+  // 6. Obsidian Settings (.obsidian/app.json & graph.json & types.json)
   files.push({
     path: ".obsidian/app.json",
     content: JSON.stringify(
       {
         attachmentFolderPath: "Attachments",
+        newFileFolderPath: "Notes",
         livePreview: true,
         showLineNumber: true,
         foldHeading: true,
+        foldIndent: true,
         readableLineLength: true,
+        strictLineBreaks: false,
+      },
+      null,
+      2
+    ),
+  });
+
+  files.push({
+    path: ".obsidian/graph.json",
+    content: JSON.stringify(
+      {
+        "collapse-filter": false,
+        search: "",
+        colorGroups: [
+          { query: 'path:Notes "type: primary_node"', color: { a: 1, rgb: 65482 } },
+          { query: 'path:Notes "type: sub_node"', color: { a: 1, rgb: 3719160 } },
+          { query: "path:Memos", color: { a: 1, rgb: 16439829 } },
+          { query: "file:00-Workspace-Index", color: { a: 1, rgb: 12616956 } },
+        ],
+        lineSizeMultiplier: 1.5,
+        nodeSizeMultiplier: 1.25,
+      },
+      null,
+      2
+    ),
+  });
+
+  files.push({
+    path: ".obsidian/types.json",
+    content: JSON.stringify(
+      {
+        types: {
+          parent: "link",
+          children: "multitext",
+          connected_links: "multitext",
+          hierarchy_level: "number",
+          hierarchy_path: "text",
+          tags: "tags",
+          workspace: "text",
+          color: "text",
+          created: "datetime",
+          updated: "datetime",
+        },
       },
       null,
       2
@@ -960,6 +1193,117 @@ export function buildObsidianVaultZip({ workspace, nodes = [], links = [], stick
   });
 
   return createZipBlob(files);
+}
+
+// --- Single Consolidated Obsidian Markdown Dossier Generator ----------------
+export function buildObsidianSingleMarkdown({ workspace, nodes = [], links = [], stickies = [] }) {
+  const wsName = workspace?.name || "BrainVault";
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const now = new Date().toISOString();
+
+  const lines = [
+    "---",
+    `title: "${escapeYamlString(wsName)} — Research Dossier"`,
+    `workspace: "${escapeYamlString(wsName)}"`,
+    `total_nodes: ${nodes.length}`,
+    `total_stickies: ${stickies.length}`,
+    `total_links: ${links.length}`,
+    `exported_at: "${now}"`,
+    "tags:",
+    "  - brainvault",
+    "  - research-dossier",
+    "  - obsidian-compatible",
+    "---",
+    "",
+    `# 🧠 ${wsName} — Master Research Dossier`,
+    "",
+    `> Exported from BrainVault Spatial Knowledge Engine on **${new Date().toLocaleString()}**  `,
+    `> Includes **${nodes.length}** concept cards, **${stickies.length}** sticky memos, and **${links.length}** relationship links.`,
+    "",
+    "## 📑 Table of Contents",
+    "",
+  ];
+
+  nodes.forEach((n, idx) => {
+    const slugAnchor = n.prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const badge = n.isCustom ? "[Custom Note]" : n.parentId ? "[Sub-Node]" : "[Primary Root]";
+    lines.push(`${idx + 1}. [[#${slugAnchor}|${n.prompt}]] \`${badge}\``);
+  });
+
+  lines.push("", "---", "", "## 🌳 Hierarchical Overview", "");
+
+  const rootNodes = nodes.filter((n) => !n.parentId);
+  function renderTreeList(node, depth = 0) {
+    const indent = "  ".repeat(depth);
+    const slugAnchor = node.prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const children = nodes.filter((c) => c.parentId === node.id);
+    let str = `${indent}- ${depth === 0 ? "🌿" : "🔗"} [[#${slugAnchor}|${node.prompt}]]\n`;
+    for (const c of children) {
+      str += renderTreeList(c, depth + 1);
+    }
+    return str;
+  }
+  for (const r of rootNodes) {
+    lines.push(renderTreeList(r, 0).trimEnd());
+  }
+
+  if (stickies.length) {
+    lines.push("", "---", "", "## 📌 Sticky Memos", "");
+    stickies.forEach((s, idx) => {
+      lines.push(
+        `### Sticky Memo #${idx + 1}`,
+        `> [!note] Memo #${idx + 1}`,
+        `> ${(s.text || "").replace(/\n/g, "\n> ")}`,
+        ""
+      );
+    });
+  }
+
+  lines.push("", "---", "", "## 📖 Detailed Notes & Concept Branches", "");
+
+  nodes.forEach((n, idx) => {
+    const parentNode = n.parentId ? byId.get(n.parentId) : null;
+    const childNodes = nodes.filter((c) => c.parentId === n.id);
+    const outlinks = links
+      .filter((l) => l.sourceId === n.id && byId.has(l.targetId))
+      .map((l) => byId.get(l.targetId));
+
+    lines.push(
+      `### ${n.prompt}`,
+      "",
+      `> [!info] Concept Metadata`,
+      `> - **Type:** ${n.isCustom ? "Custom Note" : n.parentId ? "Sub-Node" : "Primary Topic"} #${idx + 1}`,
+      parentNode ? `> - **Parent Branch:** [[#${parentNode.prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-")}|${parentNode.prompt}]]` : `> - **Parent:** *(Root Topic)*`,
+      `> - **Tags:** ${(n.tags || []).map((t) => `#${t.replace(/^#/, "")}`).join(" ") || "#research"}`,
+      ""
+    );
+
+    if (childNodes.length) {
+      lines.push(
+        `**Sub-Node Branches:**`,
+        ...childNodes.map((c) => `- [[#${c.prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-")}|${c.prompt}]]`),
+        ""
+      );
+    }
+
+    if (outlinks.length) {
+      lines.push(
+        `**Connected Concepts:**`,
+        ...outlinks.map((r) => `- [[#${r.prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-")}|${r.prompt}]]`),
+        ""
+      );
+    }
+
+    lines.push(
+      n.text ? n.text.trim() : "*(No notes recorded)*",
+      "",
+      "---",
+      ""
+    );
+  });
+
+  lines.push(`*BrainVault Spatial Dossier · Export complete.*`);
+  return lines.join("\n");
 }
 
 export function exportReport(report, format, extra = {}) {
@@ -977,10 +1321,15 @@ export function exportReport(report, format, extra = {}) {
     download(html, "text/html;charset=utf-8", `${base}-interactive-workspace.html`);
     return `${base}-interactive-workspace.html`;
   }
-  if (format === "obsidian") {
+  if (format === "obsidian" || format === "obsidian-zip") {
     const zipBlob = buildObsidianVaultZip(extra);
     download(zipBlob, "application/zip", `${base}-obsidian-vault.zip`);
     return `${base}-obsidian-vault.zip`;
+  }
+  if (format === "obsidian-md" || format === "markdown") {
+    const md = buildObsidianSingleMarkdown(extra);
+    download(md, "text/markdown;charset=utf-8", `${base}-obsidian-notes.md`);
+    return `${base}-obsidian-notes.md`;
   }
   const pdf = buildPdf(report);
   download(pdf, "application/pdf", `${base}-cards.pdf`);

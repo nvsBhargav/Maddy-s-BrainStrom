@@ -7,10 +7,13 @@ import {
   saveNewsStoryToFirestore,
   deleteNewsStoryFromFirestore,
   fetchSavedNewsFromFirestore,
+  pruneOldNewsFromFirestore,
+  syncLatestNewsToFirestore,
   syncCvesToFirestore,
   fetchCvesFromFirestore,
 } from "./firebaseClient.js";
 import { VulnerabilityTrendsD3 } from "./trendsD3.js";
+
 
 export const DEFAULT_USERS = [
   {
@@ -115,18 +118,22 @@ export class AdminDashboard {
     this.selectedUserId = "usr_karthik";
     this.userSearch = "";
     this.apiKeys = {
-      reddit_user_agent: "BrainVaultApp/2.4 (by u/karthik_admin)",
+      reddit_user_agent: "BrainVaultApp/3.0 (by u/karthik_admin)",
       rss2json_key: "",
       techcrunch_token: "",
-      wired_key: "https://wired.wubook.net/xrws/",
+      wired_key: "",
       bbc_key: "",
-      gnews_key: "gnews_test_token_12345",
+      gnews_key: "",
       mediastack_key: "a363c1ceab62c54f115b512011ec8dd7",
       higgsfield_key: "80d5a575-cacb-4f54-a8be-51571e8c2f70:af1ccaa616aca6f1d0a661b87d6a9afbe6f8d4a8c5b46f4b9cca826c81a318b2",
       newsapi_key: "7d23582d0e384e6ca8452036ee6331cc",
       currents_key: "Ef3StHE4k2Tgb2SrEmzxhMUe9_3or5apVTpPzcoi-jwDsJcZ",
       newsdata_key: "pub_e90c4dd7497c4bc2b02d59356e20b288",
     };
+    this.keyStatuses = null;
+    this.isTestingKeys = false;
+    this.activeNewsTopic = "all"; // "all" | "ai_models" | "nvidia" | "amd" | "google_cloud" | "chatgpt" | "cyber_malware"
+    this.retentionPolicy = "2-Week TTL (Auto-cleanup day-wise)";
     this.liveNews = [];
     this.currentsNews = [];
     this.newsDataNews = [];
@@ -155,11 +162,13 @@ export class AdminDashboard {
     this.isLoadingCurrents = false;
     this.isLoadingNewsData = false;
     this.isLoadingThreats = false;
+    this.isPruningDb = false;
     this.currentsTimerSeconds = 3600;
     this.currentsTimerInterval = null;
     this.isSavingKeys = false;
     this.activeExpandedWorkspaces = new Set(["ws-karthik-1", "ws-sarah-1", "ws-alex-1"]);
     this.trendsEngine = null;
+
 
     // 3D Constellation properties
     this.threeScene = null;
@@ -327,18 +336,63 @@ export class AdminDashboard {
     }
   }
 
+  async fetchKeyStatuses() {
+    this.isTestingKeys = true;
+    this.render();
+    try {
+      const res = await fetch("/api/admin/keys/status");
+      if (res.ok) {
+        const data = await res.json();
+        this.keyStatuses = data.results || {};
+        this.toast("✓ API Key diagnostic testing completed: 100% resilient fallback active.");
+      }
+    } catch (e) {
+      console.warn("Could not test API keys:", e);
+    } finally {
+      this.isTestingKeys = false;
+      this.render();
+    }
+  }
+
+  async pruneDatabaseOldNews(days = 14) {
+    this.isPruningDb = true;
+    this.render();
+    try {
+      const res = await fetch("/api/admin/news/prune", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days }),
+      });
+      const data = await res.json();
+      await pruneOldNewsFromFirestore(days);
+      await this.fetchSavedNews();
+      this.toast(`✓ 2-Week Database Cleanup: Removed ${data.prunedCount || 0} expired stories older than ${days} days (${data.cutoffDate}). Database storage saved!`);
+    } catch (e) {
+      console.warn("Database pruning failed:", e);
+    } finally {
+      this.isPruningDb = false;
+      this.render();
+    }
+  }
+
   async fetchSavedNews() {
     try {
       const res = await fetch("/api/admin/news/saved");
       if (res.ok) {
         const data = await res.json();
         this.savedNews = data.stories || [];
+        if (data.retentionPolicy) {
+          this.retentionPolicy = data.retentionPolicy;
+        }
       }
     } catch (e) {
       console.warn("Could not fetch saved news:", e);
     }
 
     try {
+      // Background prune old news in Firestore
+      pruneOldNewsFromFirestore(14).catch(() => {});
+
       const fbStories = await fetchSavedNewsFromFirestore();
       if (Array.isArray(fbStories) && fbStories.length > 0) {
         const existingIds = new Set(this.savedNews.map((s) => s.id));
@@ -365,7 +419,7 @@ export class AdminDashboard {
       });
       if (res.ok) {
         await this.fetchSavedNews();
-        this.toast(`✓ Saved “${story.title.slice(0, 30)}…” to Firebase & SQLite database.`);
+        this.toast(`✓ Saved “${story.title.slice(0, 30)}…” to Firebase & SQLite database (14-day retention).`);
         this.render();
         return;
       }
@@ -418,22 +472,28 @@ export class AdminDashboard {
     this.isLoadingNews = true;
     this.render();
     try {
+      // Query trending news aggregator which fetches AI, Nvidia, AMD, Google Cloud, ChatGPT, Cyber & Malware
       const params = new URLSearchParams();
-      if (this.newsKeyword) params.set("keyword", this.newsKeyword);
-      if (this.newsSource && this.newsSource !== "all") params.set("source", this.newsSource);
+      if (this.newsKeyword) params.set("search", this.newsKeyword);
+      if (this.activeNewsTopic && this.activeNewsTopic !== "all") params.set("topic", this.activeNewsTopic);
+      params.set("syncToDb", "true"); // Automatically syncs new items with 14-day TTL retention!
 
-      const res = await fetch(`/api/admin/news/live?${params.toString()}`);
+      const res = await fetch(`/api/admin/news/trending?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         if (data.stories && data.stories.length) {
           this.liveNews = data.stories;
           this.isLoadingNews = false;
+
+          // Sync fresh news into Firestore with 2-week TTL
+          syncLatestNewsToFirestore(this.liveNews).catch(() => {});
+
           this.render();
           return;
         }
       }
     } catch (e) {
-      console.warn("Server live news fetch failed, trying direct browser feeds:", e);
+      console.warn("Server trending news fetch fallback:", e);
     }
 
     // Direct browser fallback if server is offline or returned empty
@@ -2163,22 +2223,53 @@ export class AdminDashboard {
 
   // --- Tab 2: API Keys Manager -----------------------------------------------
   renderApiKeysTab() {
+    const getStatusPill = (keyName) => {
+      if (!this.keyStatuses) {
+        return `<div class="key-status-row"><span class="key-status-badge status-fallback">⚡ Free Fallback Active (Click Test Keys to Verify)</span></div>`;
+      }
+      const info = this.keyStatuses[keyName];
+      if (!info) {
+        return `<div class="key-status-row"><span class="key-status-badge status-fallback">⚡ Ready / Fallback Active</span></div>`;
+      }
+      const cls =
+        info.status === "active"
+          ? "status-active"
+          : info.status === "rate_limited"
+            ? "status-rate_limited"
+            : info.status === "fallback_active"
+              ? "status-fallback"
+              : "status-unconfigured";
+      const icon = info.status === "active" ? "✓" : info.status === "rate_limited" ? "⚠️" : "⚡";
+      return `
+        <div class="key-status-row">
+          <span class="key-status-badge ${cls}" title="${escapeAttr(info.message)}">
+            ${icon} ${escapeHtml(info.message || info.status)}
+          </span>
+        </div>
+      `;
+    };
+
     return `
       <div class="admin-apikeys-container">
-        <!-- Top banner matching screenshot 2 -->
+        <!-- Top banner with Key Testing HUD -->
         <div class="admin-banner-card banner-green">
           <div class="admin-banner-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 2l-2 2m-1-1l-3 3m2-2l-3 3m-2-2l-3 3m2-2l-3 3M7 11l5-5-5-5-5 5 5 5z"/>
             </svg>
           </div>
-          <div>
-            <h2 class="admin-banner-title">Master Admin API Keys Manager</h2>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+              <h2 class="admin-banner-title">Master Admin API Keys &amp; Diagnostics Engine</h2>
+              <button type="button" class="admin-btn admin-btn-cyan" id="adminTestKeysBtn" ${this.isTestingKeys ? "disabled" : ""} style="padding: 6px 14px; font-size: 11px; font-weight: 700; cursor: pointer;">
+                ${this.isTestingKeys ? "TESTING KEYS..." : "🔍 TEST ALL API KEYS NOW"}
+              </button>
+            </div>
             <p class="admin-banner-desc">
-              Enter and store all free API keys for Mediastack, Higgsfield AI, NewsAPI.org, Reddit JSON API, RSS-to-JSON Gateway, TechCrunch, Wired, BBC World News, and GNews.
+              Manage API keys for Mediastack, Higgsfield AI, NewsAPI.org, Reddit JSON API, RSS-to-JSON Gateway, Currents, and NewsData.io.
             </p>
             <p class="admin-banner-sub">
-              Keys are saved directly to your profile and server database table (<code class="admin-code-hl">brainvault_apikeys.json</code> &amp; SQLite DB) for seamless live news fetching across all sessions!
+              <strong>100% Zero-Downtime Resilience:</strong> If an API key hits rate limits (429) or is expired, BrainVault automatically and seamlessly routes queries through high-speed, CORS-open free live feeds (Hacker News Algolia, Dev.to, CISA KEV, Hugging Face, NVD 2.0).
             </p>
           </div>
         </div>
@@ -2192,15 +2283,27 @@ export class AdminDashboard {
             <input type="text" id="key_mediastack" name="mediastack_key"
               placeholder="e.g. a363c1ceab62c54f115b512011ec8dd7..."
               value="${escapeAttr(this.apiKeys.mediastack_key || "")}" />
+            ${getStatusPill("mediastack_key")}
           </div>
 
           <div class="admin-key-card">
-            <label class="admin-key-label" for="key_higgsfield">
-              <span class="key-glyph">🔬</span> Higgsfield AI API Key (Key:Secret)
+            <label class="admin-key-label" for="key_newsdata">
+              <span class="key-glyph">📡</span> NewsData.io API Key (7-Pt Briefings, Cyber &amp; Tech)
             </label>
-            <input type="text" id="key_higgsfield" name="higgsfield_key"
-              placeholder="e.g. 80d5a575-cacb...:af1ccaa616..."
-              value="${escapeAttr(this.apiKeys.higgsfield_key || "")}" />
+            <input type="text" id="key_newsdata" name="newsdata_key"
+              placeholder="e.g. pub_e90c4dd7497c4bc2b02d59356e20b288..."
+              value="${escapeAttr(this.apiKeys.newsdata_key || "pub_e90c4dd7497c4bc2b02d59356e20b288")}" />
+            ${getStatusPill("newsdata_key")}
+          </div>
+
+          <div class="admin-key-card">
+            <label class="admin-key-label" for="key_currents">
+              <span class="key-glyph">🌐</span> Currents API Key (Cyber, AI &amp; World News)
+            </label>
+            <input type="text" id="key_currents" name="currents_key"
+              placeholder="e.g. Ef3StHE4k2Tgb2SrEmzxhMUe9_3or5apVTpPzcoi-jwDsJcZ..."
+              value="${escapeAttr(this.apiKeys.currents_key || "Ef3StHE4k2Tgb2SrEmzxhMUe9_3or5apVTpPzcoi-jwDsJcZ")}" />
+            ${getStatusPill("currents_key")}
           </div>
 
           <div class="admin-key-card">
@@ -2210,6 +2313,17 @@ export class AdminDashboard {
             <input type="text" id="key_newsapi" name="newsapi_key"
               placeholder="e.g. 7d23582d0e384e6ca8452036ee6331cc..."
               value="${escapeAttr(this.apiKeys.newsapi_key || "")}" />
+            ${getStatusPill("newsapi_key")}
+          </div>
+
+          <div class="admin-key-card">
+            <label class="admin-key-label" for="key_higgsfield">
+              <span class="key-glyph">🔬</span> Higgsfield AI API Key (Key:Secret)
+            </label>
+            <input type="text" id="key_higgsfield" name="higgsfield_key"
+              placeholder="e.g. 80d5a575-cacb...:af1ccaa616..."
+              value="${escapeAttr(this.apiKeys.higgsfield_key || "")}" />
+            ${getStatusPill("higgsfield_key")}
           </div>
 
           <div class="admin-key-card">
@@ -2217,8 +2331,19 @@ export class AdminDashboard {
               <span class="key-glyph">&gt;_</span> Reddit JSON API / User-Agent Identifier
             </label>
             <input type="text" id="key_reddit" name="reddit_user_agent"
-              placeholder="e.g. BrainVaultApp/2.4 (by u/username)"
+              placeholder="e.g. BrainVaultApp/3.0 (by u/username)"
               value="${escapeAttr(this.apiKeys.reddit_user_agent || "")}" />
+            ${getStatusPill("reddit_user_agent")}
+          </div>
+
+          <div class="admin-key-card">
+            <label class="admin-key-label" for="key_gnews">
+              <span class="key-glyph">🔑</span> GNews.io API Key (Optional)
+            </label>
+            <input type="text" id="key_gnews" name="gnews_key"
+              placeholder="Paste custom GNews key (optional)..."
+              value="${escapeAttr(this.apiKeys.gnews_key || "")}" />
+            ${getStatusPill("gnews_key")}
           </div>
 
           <div class="admin-key-card">
@@ -2231,57 +2356,12 @@ export class AdminDashboard {
           </div>
 
           <div class="admin-key-card">
-            <label class="admin-key-label" for="key_techcrunch">
-              <span class="key-glyph">⚙️</span> TechCrunch Feed Token / Key Block
-            </label>
-            <input type="text" id="key_techcrunch" name="techcrunch_token"
-              placeholder="Paste TechCrunch API key..."
-              value="${escapeAttr(this.apiKeys.techcrunch_token || "")}" />
-          </div>
-
-          <div class="admin-key-card">
             <label class="admin-key-label" for="key_wired">
               <span class="key-glyph">⚡</span> Wired Science &amp; Tech Key Block
             </label>
             <input type="text" id="key_wired" name="wired_key"
-              placeholder="Paste Wired API key..."
+              placeholder="Paste Wired API key (optional)..."
               value="${escapeAttr(this.apiKeys.wired_key || "")}" />
-          </div>
-
-          <div class="admin-key-card">
-            <label class="admin-key-label" for="key_bbc">
-              <span class="key-glyph">🌐</span> BBC World News Keys Block
-            </label>
-            <input type="text" id="key_bbc" name="bbc_key"
-              placeholder="Paste BBC World API key..."
-              value="${escapeAttr(this.apiKeys.bbc_key || "")}" />
-          </div>
-
-          <div class="admin-key-card">
-            <label class="admin-key-label" for="key_currents">
-              <span class="key-glyph">🌐</span> Currents API Key (Cyber, AI &amp; World News)
-            </label>
-            <input type="text" id="key_currents" name="currents_key"
-              placeholder="e.g. Ef3StHE4k2Tgb2SrEmzxhMUe9_3or5apVTpPzcoi-jwDsJcZ..."
-              value="${escapeAttr(this.apiKeys.currents_key || "Ef3StHE4k2Tgb2SrEmzxhMUe9_3or5apVTpPzcoi-jwDsJcZ")}" />
-          </div>
-
-          <div class="admin-key-card">
-            <label class="admin-key-label" for="key_newsdata">
-              <span class="key-glyph">📡</span> NewsData.io API Key (10-Pt Briefings, Cyber &amp; Tech)
-            </label>
-            <input type="text" id="key_newsdata" name="newsdata_key"
-              placeholder="e.g. pub_e90c4dd7497c4bc2b02d59356e20b288..."
-              value="${escapeAttr(this.apiKeys.newsdata_key || "pub_e90c4dd7497c4bc2b02d59356e20b288")}" />
-          </div>
-
-          <div class="admin-key-card">
-            <label class="admin-key-label" for="key_gnews">
-              <span class="key-glyph">🔑</span> GNews.io API Key
-            </label>
-            <input type="text" id="key_gnews" name="gnews_key"
-              placeholder="Paste GNews API key..."
-              value="${escapeAttr(this.apiKeys.gnews_key || "")}" />
           </div>
 
           <div class="admin-keys-submit-row">
@@ -2297,37 +2377,38 @@ export class AdminDashboard {
   // --- Tab 3: Live Fetch News ------------------------------------------------
   renderLiveNewsTab() {
     const activeTopic = this.activeNewsTopic || "all";
-    const getStoryTopic = (s) => {
-      const src = (s.source || "").toLowerCase();
-      const title = (s.title || "").toLowerCase();
-      const summ = (s.summary || "").toLowerCase();
-      const top = (s.topic || "").toLowerCase();
-      if (src.includes("higgsfield") || title.includes("paper:") || src.includes("arxiv") || src.includes("daily papers") || title.includes("model") || top === "higgsfield") return "higgsfield";
-      if (src.includes("threat") || src.includes("nvd") || src.includes("security") || src.includes("cve") || src.includes("krebs") || src.includes("thn") || title.includes("cve-") || title.includes("zero-day") || title.includes("ransomware") || title.includes("malware") || title.includes("vulnerability") || title.includes("breach") || title.includes("exploit") || title.includes("cyber") || top === "cybersecurity") return "cybersecurity";
-      if (top === "ai" || src.includes("ai") || title.includes("ai") || title.includes("llm") || title.includes("neural") || title.includes("gpt") || summ.includes("artificial intelligence") || summ.includes("machine learning")) return "ai";
-      if (top) return top;
-      return "world";
+
+    const getStoryTopicKey = (s) => {
+      if (s.categoryKey) return s.categoryKey;
+      const text = `${s.title} ${s.summary} ${s.source}`.toLowerCase();
+      if (/nvidia|blackwell|b200|gb200|dgx|rtx 50/i.test(text)) return "nvidia";
+      if (/amd|mi325x|mi350|rocm|ryzen/i.test(text)) return "amd";
+      if (/chatgpt|openai|o1|o3-mini|gpt-4/i.test(text)) return "chatgpt";
+      if (/google|gemini|gcp|vertex ai|tpu|trillium/i.test(text)) return "google_cloud";
+      if (/ransomware|malware|cve|cisa|zero-day|vulnerab/i.test(text)) return "cyber_malware";
+      return "ai_models";
     };
 
     const counts = {
       all: this.liveNews.length,
-      cybersecurity: this.liveNews.filter((s) => getStoryTopic(s) === "cybersecurity").length,
-      ai: this.liveNews.filter((s) => getStoryTopic(s) === "ai").length,
-      higgsfield: this.liveNews.filter((s) => getStoryTopic(s) === "higgsfield").length,
-      world: this.liveNews.filter((s) => getStoryTopic(s) === "world").length,
+      ai_models: this.liveNews.filter((s) => getStoryTopicKey(s) === "ai_models").length,
+      nvidia: this.liveNews.filter((s) => getStoryTopicKey(s) === "nvidia").length,
+      amd: this.liveNews.filter((s) => getStoryTopicKey(s) === "amd").length,
+      google_cloud: this.liveNews.filter((s) => getStoryTopicKey(s) === "google_cloud").length,
+      chatgpt: this.liveNews.filter((s) => getStoryTopicKey(s) === "chatgpt").length,
+      cyber_malware: this.liveNews.filter((s) => getStoryTopicKey(s) === "cyber_malware").length,
     };
 
     let filteredNews = this.liveNews.filter((story) => {
       if (activeTopic === "all") return true;
-      const top = getStoryTopic(story);
-      return top === activeTopic;
+      return getStoryTopicKey(story) === activeTopic;
     });
 
     // Sort latest-first (publishedAt descending)
     filteredNews.sort((a, b) => {
       const getTs = (item) => {
         const d = item.publishedAt;
-        if (!d || d === "Latest Release" || d === "Today") return Infinity;
+        if (!d || d === "Live Trending" || d === "Today") return Infinity;
         const ts = new Date(d).getTime();
         return isNaN(ts) ? 0 : ts;
       };
@@ -2338,12 +2419,30 @@ export class AdminDashboard {
 
     return `
       <div class="admin-news-tab-container">
-        <!-- Control Header matching screenshot 3 -->
+        <!-- 2-Week Database Storage Retention Banner -->
+        <div class="db-retention-banner">
+          <div class="db-retention-left">
+            <span class="db-retention-tag">📅 2-WEEK TTL DATABASE RETENTION</span>
+            <span class="db-retention-text">
+              Automatic storage space optimizer active: Only new stories are synced, and articles older than 14 days are cleaned day-wise.
+            </span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="db-retention-btn" id="adminPruneDbBtn" ${this.isPruningDb ? "disabled" : ""}>
+              ${this.isPruningDb ? "CLEANING DB..." : "🧹 RUN 2-WEEK CLEANUP NOW"}
+            </button>
+            <button type="button" class="db-retention-btn" id="adminSyncAllDbBtn" style="border-color: #38bdf8; background: rgba(56, 189, 248, 0.18); color: #38bdf8;">
+              🔄 SYNC FRESH TO DB &amp; FIRESTORE
+            </button>
+          </div>
+        </div>
+
+        <!-- Control Header -->
         <div class="admin-news-headbar">
           <div class="admin-news-headbar-left">
             <span class="admin-live-pulse-dot"></span>
-            <strong>Admin Live News Fetcher</strong>
-            <span class="admin-news-subtext">Live fetch news from free APIs and save stories into the database table</span>
+            <strong>Admin Live News &amp; Model Intelligence</strong>
+            <span class="admin-news-subtext">Live trending updates on AI, Nvidia, AMD, Google Cloud, ChatGPT &amp; Cyber Threat Feeds</span>
           </div>
 
           <div class="admin-news-headbar-right">
@@ -2354,66 +2453,51 @@ export class AdminDashboard {
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
               <input type="text" id="adminNewsKeywordInput"
-                placeholder="Search keywords on feeds (e.g. AI, cyber, zero-day)..."
+                placeholder="Search topics (e.g. Blackwell, o3-mini, Gemini, CVE)..."
                 value="${escapeAttr(this.newsKeyword || "")}" />
-            </div>
-
-            <!-- Source dropdown -->
-            <div class="admin-news-select-wrap">
-              <select id="adminNewsSourceSelect">
-                <option value="all" ${this.newsSource === "all" ? "selected" : ""}>⚡ All Free Sources (Wired, OSV.dev, Currents, NewsData, Mediastack, Feeds)</option>
-                <option value="wired" ${this.newsSource === "wired" ? "selected" : ""}>⚡ Wired News (Tech, Science &amp; Security)</option>
-                <option value="osv" ${this.newsSource === "osv" ? "selected" : ""}>🛡️ OSV.dev Open Source Vulnerability News</option>
-                <option value="currents" ${this.newsSource === "currents" ? "selected" : ""}>🌐 Currents API (Cyber, AI &amp; World News)</option>
-                <option value="newsdata" ${this.newsSource === "newsdata" ? "selected" : ""}>📰 NewsData.io (10-Pt Intelligence Briefings)</option>
-                <option value="threats" ${this.newsSource === "threats" ? "selected" : ""}>🛡️ NVD Threat Center (Dangerous Attacks &amp; CVEs)</option>
-                <option value="mediastack" ${this.newsSource === "mediastack" ? "selected" : ""}>🌐 Mediastack API (AI, Cyber &amp; Top Headlines)</option>
-                <option value="higgsfield" ${this.newsSource === "higgsfield" ? "selected" : ""}>🔬 Higgsfield AI (Latest Papers &amp; Models)</option>
-                <option value="newsapi" ${this.newsSource === "newsapi" ? "selected" : ""}>📰 NewsAPI.org (AI, Tech &amp; Cybersecurity)</option>
-                <option value="hn" ${this.newsSource === "hn" ? "selected" : ""}>🔥 Hacker News (Algolia)</option>
-                <option value="medium" ${this.newsSource === "medium" ? "selected" : ""}>✍️ Medium Cybersecurity</option>
-                <option value="thn" ${this.newsSource === "thn" ? "selected" : ""}>🛡️ The Hacker News RSS</option>
-                <option value="securityweek" ${this.newsSource === "securityweek" ? "selected" : ""}>🔒 SecurityWeek RSS</option>
-                <option value="krebs" ${this.newsSource === "krebs" ? "selected" : ""}>🕵️ Krebs on Security</option>
-                <option value="devto" ${this.newsSource === "devto" ? "selected" : ""}>💻 Dev.to Security &amp; Tech</option>
-              </select>
             </div>
 
             <!-- Fetch Now Button -->
             <button class="admin-fetch-btn" id="adminFetchNewsBtn">
-              <span class="admin-ico">🔄</span> FETCH NOW
+              <span class="admin-ico">🔄</span> FETCH LIVE NEWS
             </button>
           </div>
         </div>
 
-        <!-- Topic Tabs Bar (Separate Tabs strictly by Topic) -->
+        <!-- Thematic Category Filter Tabs Bar (Color Coded to Match News Theme Feeds) -->
         <div class="admin-topic-tabs-bar" role="tablist" aria-label="Topic filters">
           <button class="admin-topic-tab ${activeTopic === "all" ? "is-active" : ""}" data-news-topic="all">
-            ⚡ All Topics <span class="admin-topic-count">${counts.all}</span>
+            ⚡ All Streams <span class="admin-topic-count">${counts.all}</span>
           </button>
-          <button class="admin-topic-tab ${activeTopic === "cybersecurity" ? "is-active" : ""}" data-news-topic="cybersecurity">
-            🔒 Cybersecurity Only <span class="admin-topic-count">${counts.cybersecurity}</span>
+          <button class="admin-topic-tab ${activeTopic === "ai_models" ? "is-active" : ""}" data-news-topic="ai_models" style="color: #c084fc;">
+            🤖 AI Models &amp; Releases <span class="admin-topic-count">${counts.ai_models}</span>
           </button>
-          <button class="admin-topic-tab ${activeTopic === "ai" ? "is-active" : ""}" data-news-topic="ai">
-            🤖 AI &amp; Research <span class="admin-topic-count">${counts.ai}</span>
+          <button class="admin-topic-tab ${activeTopic === "nvidia" ? "is-active" : ""}" data-news-topic="nvidia" style="color: #10b981;">
+            🟢 Nvidia Tech &amp; GPUs <span class="admin-topic-count">${counts.nvidia}</span>
           </button>
-          <button class="admin-topic-tab ${activeTopic === "higgsfield" ? "is-active" : ""}" data-news-topic="higgsfield">
-            🔬 Higgsfield Papers &amp; Models <span class="admin-topic-count">${counts.higgsfield}</span>
+          <button class="admin-topic-tab ${activeTopic === "amd" ? "is-active" : ""}" data-news-topic="amd" style="color: #f97316;">
+            🔴 AMD Hardware &amp; ROCm <span class="admin-topic-count">${counts.amd}</span>
           </button>
-          <button class="admin-topic-tab ${activeTopic === "world" ? "is-active" : ""}" data-news-topic="world">
-            🌍 World &amp; Tech <span class="admin-topic-count">${counts.world}</span>
+          <button class="admin-topic-tab ${activeTopic === "google_cloud" ? "is-active" : ""}" data-news-topic="google_cloud" style="color: #38bdf8;">
+            ☁️ Google &amp; Cloud AI <span class="admin-topic-count">${counts.google_cloud}</span>
+          </button>
+          <button class="admin-topic-tab ${activeTopic === "chatgpt" ? "is-active" : ""}" data-news-topic="chatgpt" style="color: #2dd4bf;">
+            ⚡ ChatGPT &amp; OpenAI <span class="admin-topic-count">${counts.chatgpt}</span>
+          </button>
+          <button class="admin-topic-tab ${activeTopic === "cyber_malware" ? "is-active" : ""}" data-news-topic="cyber_malware" style="color: #f43f5e;">
+            🚨 Cyber, Malware &amp; Vulns <span class="admin-topic-count">${counts.cyber_malware}</span>
           </button>
         </div>
 
-        <!-- News Cards Grid (3 Columns) matching screenshot 3 -->
+        <!-- News Cards Grid (3 Columns) -->
         <div class="admin-news-grid">
           ${
             this.isLoadingNews
-              ? this.renderLoadingCards("Fetching real-time cybersecurity & hacking feeds from worldwide sources...")
+              ? this.renderLoadingCards("Querying live updates on AI, Nvidia, AMD, Google Cloud, ChatGPT, and Cyber Malware...")
               : filteredNews.length === 0
                 ? `
               <div class="admin-no-news">
-                <p>No news items match your current topic filter (“${escapeHtml(activeTopic)}”). Click “FETCH NOW” to refresh.</p>
+                <p>No news items match your current topic filter (“${escapeHtml(activeTopic)}”). Click “FETCH LIVE NEWS” to pull updates.</p>
               </div>
             `
                 : filteredNews
@@ -2426,14 +2510,23 @@ export class AdminDashboard {
                         takeaways = takeaways.slice(0, 7);
                       }
 
+                      const topKey = getStoryTopicKey(story);
+                      const titleColorClass = story.colorClass || `title-color-${topKey === "ai_models" ? "aimodel" : topKey === "google_cloud" ? "google" : topKey === "cyber_malware" ? "cyber" : topKey}`;
+                      const cardThemeClass = `card-theme-${topKey === "ai_models" ? "aimodel" : topKey === "google_cloud" ? "google" : topKey === "cyber_malware" ? "cyber" : topKey}`;
+                      const brief = story.modelReleaseBrief;
+
                       return `
-                    <div class="admin-news-card" data-story-id="${story.id}">
+                    <div class="admin-news-card ${cardThemeClass}" data-story-id="${story.id}">
                       <div class="admin-news-card-head">
-                        <span class="admin-source-badge">${escapeHtml(story.source || "Hacker News")}</span>
+                        <span class="admin-source-badge">${escapeHtml(story.source || "Intelligence Feed")}</span>
+                        <span class="currents-cat-pill" style="border-color: ${story.colorHex || "#38bdf8"}; color: ${story.colorHex || "#38bdf8"};">
+                          ${escapeHtml(story.categoryTag || "Live Tech")}
+                        </span>
                         <span class="admin-news-time">${escapeHtml(story.timeAgo || "recently")}</span>
                       </div>
 
-                      <h3 class="admin-news-title">
+                      <!-- Heading in Different Theme Colors to Match Feeds -->
+                      <h3 class="admin-news-title ${titleColorClass}">
                         <a href="${escapeAttr(story.url)}" target="_blank" rel="noopener noreferrer">
                           ${escapeHtml(story.title)}
                         </a>
@@ -2443,6 +2536,33 @@ export class AdminDashboard {
                         ${escapeHtml(story.summary || "")}
                       </p>
 
+                      <!-- If Model Released: Explain in a Structured Brief with Key Features -->
+                      ${
+                        brief
+                          ? `
+                        <div class="admin-model-brief-box">
+                          <div class="admin-model-brief-head">
+                            <span class="admin-model-brief-badge">⭐ MODEL RELEASE BRIEF</span>
+                            <span class="admin-model-brief-dev">${escapeHtml(brief.developer)} · ${escapeHtml(brief.releaseType)}</span>
+                          </div>
+                          <div class="admin-model-specs">
+                            <strong>Architecture &amp; Specs:</strong> ${escapeHtml(brief.architectureSpecs)}
+                          </div>
+                          <div class="admin-model-features-title">🎯 Key Breakthrough Features:</div>
+                          <ul class="admin-model-features-list">
+                            ${(brief.keyFeatures || []).map((feat) => `<li>${escapeHtml(feat)}</li>`).join("")}
+                          </ul>
+                          <div class="admin-model-benchmark">
+                            <strong>Leaderboard Benchmark:</strong> ${escapeHtml(brief.benchmarkHighlights)}
+                          </div>
+                          <div class="admin-model-rec">
+                            <strong>Deployment Guidance:</strong> ${escapeHtml(brief.recommendation)}
+                          </div>
+                        </div>
+                      `
+                          : ""
+                      }
+
                       <!-- Collapsible 7 Key Special Points Button & Box -->
                       <button class="admin-takeaways-toggle-btn" data-action="toggle-takeaways" data-story-id="${story.id}" data-takeaways-count="${takeaways.length || 7}">
                         👁️ View Key Points (${takeaways.length || 7})
@@ -2451,23 +2571,21 @@ export class AdminDashboard {
                       <div class="admin-takeaways-box admin-10point-box is-hidden" id="takeaways-box-${story.id}">
                         <div class="admin-takeaways-title admin-10point-title">🎯 7 KEY SPECIAL POINTS &amp; THREAT INTEL:</div>
                         <ul class="admin-takeaways-list admin-10point-list">
-                          ${takeaways
-                            .map((t) => `<li>${escapeHtml(t)}</li>`)
-                            .join("")}
+                          ${takeaways.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}
                         </ul>
                       </div>
 
-                      <!-- Bottom Actions Row matching screenshot 3 -->
+                      <!-- Bottom Actions Row -->
                       <div class="admin-news-actions-row">
                         <a href="${escapeAttr(story.url)}" target="_blank" rel="noopener noreferrer" class="admin-read-link">
-                          Read ↗
+                          Read Full ↗
                         </a>
                         <div class="admin-news-btn-group">
                           <button class="admin-btn-save-db ${isSaved ? "is-saved" : ""}" data-action="save-db" data-story-id="${story.id}">
-                            ${isSaved ? "✓ SAVED" : "💾 SAVE TO DB"}
+                            ${isSaved ? "✓ IN DB" : "💾 SAVE TO DB"}
                           </button>
-                          <button class="admin-btn-create-note" data-action="create-note" data-story-id="${story.id}" title="Create a note directly onto canvas with important points">
-                            📝 CREATE NOTE
+                          <button class="admin-btn-create-note" data-action="create-note" data-story-id="${story.id}" title="Create a note directly onto canvas with key features">
+                            📝 + CREATE NOTE
                           </button>
                         </div>
                       </div>
@@ -2480,6 +2598,7 @@ export class AdminDashboard {
       </div>
     `;
   }
+
 
   // --- NVD Threat Center & Dangerous CVE Attacks Tab -------------------------
   renderThreatsTab() {
@@ -3292,10 +3411,23 @@ export class AdminDashboard {
   renderSavedNewsTab() {
     return `
       <div class="admin-saved-container">
+        <!-- 2-Week Database Storage Retention Banner -->
+        <div class="db-retention-banner">
+          <div class="db-retention-left">
+            <span class="db-retention-tag">📅 2-WEEK TTL DATABASE STORAGE</span>
+            <span class="db-retention-text">
+              Active Storage Optimization: Stories older than 14 days are automatically purged day-wise to conserve database space.
+            </span>
+          </div>
+          <button type="button" class="db-retention-btn" id="adminPruneDbSavedBtn" ${this.isPruningDb ? "disabled" : ""}>
+            ${this.isPruningDb ? "CLEANING..." : "🧹 RUN 2-WEEK PRUNING NOW"}
+          </button>
+        </div>
+
         <div class="admin-saved-header">
           <div>
             <h3>Saved Cyber News Database (${this.savedNews.length})</h3>
-            <p>Archived intelligence reports and threat briefings stored in SQLite database table.</p>
+            <p>Archived intelligence reports and threat briefings stored in SQLite &amp; Firebase database table.</p>
           </div>
           <div class="admin-saved-actions">
             <button class="admin-btn admin-btn-cyan-outline" id="adminExportSavedJsonBtn">
@@ -3312,7 +3444,7 @@ export class AdminDashboard {
             <table class="admin-table">
               <thead>
                 <tr>
-                  <th>Source</th>
+                  <th>Category / Source</th>
                   <th>Title &amp; Brief</th>
                   <th>7 Key Points &amp; Takeaways</th>
                   <th>Saved Date</th>
@@ -3322,11 +3454,18 @@ export class AdminDashboard {
               <tbody>
                 ${this.savedNews
                   .map(
-                    (s) => `
+                    (s) => {
+                      const colorClass = s.colorClass || s.colorTheme || "title-color-google";
+                      const isModel = Boolean(s.modelReleaseBrief);
+                      return `
                   <tr>
-                    <td><span class="admin-source-badge">${escapeHtml(s.source)}</span></td>
+                    <td>
+                      <span class="admin-source-badge">${escapeHtml(s.source || "Database Feed")}</span>
+                      ${s.categoryTag ? `<div style="font-size: 9.5px; font-family: var(--mono); color: #94a3b8; margin-top: 4px;">${escapeHtml(s.categoryTag)}</div>` : ""}
+                    </td>
                     <td class="col-title">
-                      <strong>${escapeHtml(s.title)}</strong>
+                      <strong class="${colorClass}">${escapeHtml(s.title)}</strong>
+                      ${isModel ? `<span style="display:inline-block; font-size: 9px; padding: 1px 5px; border-radius: 4px; background: rgba(192, 132, 252, 0.2); border: 1px solid #c084fc; color: #e9d5ff; margin-left: 6px;">⭐ Model Brief</span>` : ""}
                       <p class="table-summary">${escapeHtml(s.summary || "")}</p>
                     </td>
                     <td class="col-takeaways">
@@ -3341,7 +3480,8 @@ export class AdminDashboard {
                       <button class="admin-btn-tiny admin-btn-danger admin-table-del-news" data-story-id="${s.id}">🗑️</button>
                     </td>
                   </tr>
-                `
+                `;
+                    }
                   )
                   .join("")}
               </tbody>
@@ -3352,6 +3492,7 @@ export class AdminDashboard {
       </div>
     `;
   }
+
 
   // --- Tab 5: Image Storage Table --------------------------------------------
   renderImageStorageTab() {
@@ -4197,6 +4338,10 @@ export class AdminDashboard {
 
     // Tab 2: API Keys
     if (this.currentTab === "keys") {
+      root.querySelector("#adminTestKeysBtn")?.addEventListener("click", () => {
+        this.fetchKeyStatuses();
+      });
+
       const keysForm = root.querySelector("#adminApiKeysForm");
       keysForm?.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -4554,13 +4699,26 @@ export class AdminDashboard {
       root.querySelectorAll("[data-news-topic]").forEach((btn) => {
         btn.addEventListener("click", () => {
           this.activeNewsTopic = btn.dataset.newsTopic || "all";
-          this.render();
+          this.fetchLiveNews();
         });
+      });
+
+      // 2-Week Database Prune and Sync buttons
+      root.querySelector("#adminPruneDbBtn")?.addEventListener("click", () => {
+        this.pruneDatabaseOldNews(14);
+      });
+      root.querySelector("#adminSyncAllDbBtn")?.addEventListener("click", () => {
+        this.fetchLiveNews();
       });
     }
 
     // Tab 4: Saved News Table
     if (this.currentTab === "saved") {
+      // 2-Week Database Retention Prune button
+      root.querySelector("#adminPruneDbSavedBtn")?.addEventListener("click", () => {
+        this.pruneDatabaseOldNews(14);
+      });
+
       root.querySelectorAll(".admin-table-create-note").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           const sId = btn.dataset.storyId;

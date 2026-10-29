@@ -1095,23 +1095,807 @@ export class UI {
     const scope = selected.length ? `${selected.length} selected card${selected.length === 1 ? "" : "s"}` : `all ${scoped.length} card${scoped.length === 1 ? "" : "s"} in this workspace`;
     this.openModal(`
       <div class="modal-head">
-        <div><span class="eyebrow">EXPORT DOSSIER</span><h2>Download cards</h2>
-        <p>${escapeHtml(scope)} · includes tags, tables, code blocks and links.</p></div>
+        <div>
+          <span class="eyebrow">NEURAL DOSSIER SUITE</span>
+          <h2>Export Knowledge &amp; Canvas Dossier</h2>
+          <p>${escapeHtml(scope)} · preserves hierarchical parent &rarr; child trees, YAML metadata, and cloud documents.</p>
+        </div>
         <button class="icon-btn" data-close-modal aria-label="Close">${icon("x", 18)}</button>
       </div>
-      <div class="modal-body">
-        <div class="export-grid">
-          <button class="export-option accent-html" data-modal-action="export-html"><strong>🌐 INTERACTIVE HTML</strong><span>Standalone offline interactive webpage</span></button>
-          <button class="export-option accent-obsidian" data-modal-action="export-obsidian"><strong>💎 OBSIDIAN VAULT (.ZIP)</strong><span>Markdown vault with frontmatter &amp; [[wikilinks]]</span></button>
-          <button class="export-option accent-gdocs" data-modal-action="export-gdocs"><strong>GOOGLE DOCS</strong><span>Save to Google Docs (docs.new)</span></button>
-          <button class="export-option accent-gdrive" data-modal-action="export-gdrive"><strong>GOOGLE DRIVE</strong><span>Cloud sync &amp; open drive</span></button>
-          <button class="export-option" data-modal-action="export-pdf"><strong>PDF</strong><span>Print-ready A4 document</span></button>
-          <button class="export-option" data-modal-action="export-doc"><strong>DOC</strong><span>Editable Word document</span></button>
-          <button class="export-option" data-modal-action="export-txt"><strong>TXT</strong><span>Plain text, smallest file</span></button>
+      <div class="modal-body export-modal-body">
+        <div class="export-grid-v2">
+          <!-- Card 1: Obsidian Vault (.zip) -->
+          <article class="export-card accent-obsidian">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("diamond", 18)}
+              </div>
+              <span class="export-tag-chip">VAULT ARCHIVE</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Obsidian Vault (.zip)</h3>
+              <p class="export-card-desc">Formatted Markdown folder structure with YAML frontmatter links, .canvas map, and sub-node hierarchy.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">YAML Links</span>
+                <span class="export-mini-pill">Obsidian .canvas</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="preview-obsidian" title="Visual Preview & Download Obsidian vault (.zip)">
+              <span>Preview &amp; Export</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
+
+          <!-- Card 2: Obsidian Markdown (.md) -->
+          <article class="export-card accent-markdown">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("fileText", 18)}
+              </div>
+              <span class="export-tag-chip">SINGLE MARKDOWN</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Obsidian Notes (.md)</h3>
+              <p class="export-card-desc">Consolidated single Markdown document with YAML frontmatter, table of contents, and hierarchical wikilinks.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">Frontmatter</span>
+                <span class="export-mini-pill">[[Wikilinks]]</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="export-obsidian-md" title="Download single Obsidian Markdown document (.md)">
+              <span>Download .md</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
+
+          <!-- Card 3: Interactive HTML Canvas -->
+          <article class="export-card accent-html">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("compass", 18)}
+              </div>
+              <span class="export-tag-chip">SPATIAL WEBPAGE</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Interactive HTML Canvas</h3>
+              <p class="export-card-desc">Self-contained offline interactive spatial web dossier with pan, zoom, card details modal, and search.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">Offline Web</span>
+                <span class="export-mini-pill">Zero Server</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="export-html" title="Download standalone interactive HTML webpage">
+              <span>Export HTML</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
+
+          <!-- Card 4: Google Docs Dossier -->
+          <article class="export-card accent-gdocs">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("gdocsFile", 18)}
+              </div>
+              <span class="export-tag-chip">CLOUD GOOGLE DOCS</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Google Docs Dossier</h3>
+              <p class="export-card-desc">Clean formatted web document with executive headers, research tables, and one-click Google Docs save.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">docs.new</span>
+                <span class="export-mini-pill">Cloud Web</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="export-gdocs" title="Open and save to Google Docs (docs.new)">
+              <span>Open in Docs</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
+
+          <!-- Card 5: Google Drive Backup -->
+          <article class="export-card accent-gdrive">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("save", 18)}
+              </div>
+              <span class="export-tag-chip">CLOUD DRIVE SYNC</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Google Drive Sync</h3>
+              <p class="export-card-desc">Direct synchronization to persistent local cloud folder with timestamped HTML knowledge snapshot.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">Drive Sync</span>
+                <span class="export-mini-pill">Timestamped</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="export-gdrive" title="Sync workspace dossier to Google Drive folder">
+              <span>Sync to Drive</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
+
+          <!-- Card 6: Print-Ready PDF (A4) -->
+          <article class="export-card accent-pdf">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("download", 18)}
+              </div>
+              <span class="export-tag-chip">VECTOR DOCUMENT</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Print-Ready PDF (A4)</h3>
+              <p class="export-card-desc">Print-optimized multi-page A4 PDF report with table of contents, card tags, and code blocks.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">A4 Vector</span>
+                <span class="export-mini-pill">Offline PDF</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="export-pdf" title="Generate and download print-ready PDF">
+              <span>Download PDF</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
+
+          <!-- Card 7: Microsoft Word (.doc) -->
+          <article class="export-card accent-doc">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("book", 18)}
+              </div>
+              <span class="export-tag-chip">EDITABLE OFFICE</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Microsoft Word (.doc)</h3>
+              <p class="export-card-desc">Fully editable Microsoft Word document with formatted heading styles, tables, and typography.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">Word XML</span>
+                <span class="export-mini-pill">Editable</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="export-doc" title="Download editable Microsoft Word document">
+              <span>Download Word</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
+
+          <!-- Card 8: Clean Plain Text (.txt) -->
+          <article class="export-card accent-txt">
+            <div class="export-card-top">
+              <div class="export-icon-box">
+                ${icon("terminal", 18)}
+              </div>
+              <span class="export-tag-chip">RAW TRANSCRIPT</span>
+            </div>
+            <div class="export-card-content">
+              <h3 class="export-card-title">Clean Plain Text (.txt)</h3>
+              <p class="export-card-desc">Lightweight ASCII outline dossier compatible with any terminal, notes app, or LLM prompt.</p>
+              <div class="export-badge-row">
+                <span class="export-mini-pill">UTF-8 Raw</span>
+                <span class="export-mini-pill">Smallest Size</span>
+              </div>
+            </div>
+            <button class="export-card-btn" data-modal-action="export-txt" title="Download lightweight plain text document">
+              <span>Download Plain Text</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </article>
         </div>
-        <p class="export-hint">Tip: select cards on the canvas (shift-click) to export only those.</p>
+
+        <div class="export-footer-bar">
+          <div class="export-hint-badge">
+            ${icon("compass", 13)}
+            <span>Shift-click cards on canvas to export a targeted selection, or export entire workspace.</span>
+          </div>
+        </div>
       </div>
     `);
+  }
+
+  openObsidianPreview() {
+    const selected = [...this.canvas.selected];
+    const nodes = selected.length
+      ? this.store.nodes().filter((n) => this.canvas.selected.has(n.id))
+      : this.store.nodes();
+
+    if (!nodes.length) {
+      this.toast?.("Add or select a card first, then inspect Obsidian preview.");
+      return;
+    }
+
+    const ws = this.store.activeWorkspace();
+    const wsName = ws?.name || "BrainVault Research Space";
+    const links = this.store.links();
+    const stickies = this.store.stickies();
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+
+    function safeName(title) {
+      return String(title || "Untitled Note")
+        .replace(/[/\\:*?"<>|#^[\]]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 80) || "Untitled Note";
+    }
+
+    function getHierarchy(node) {
+      let level = 0;
+      let curr = node;
+      const pathItems = [node.prompt];
+      const visited = new Set([node.id]);
+      while (curr.parentId && byId.has(curr.parentId) && level < 25) {
+        curr = byId.get(curr.parentId);
+        if (visited.has(curr.id)) break;
+        visited.add(curr.id);
+        pathItems.unshift(curr.prompt);
+        level++;
+      }
+      return { level, path: pathItems.join(" / ") };
+    }
+
+    // Build planned files dictionary
+    const filesData = new Map();
+
+    // 1. Index file
+    const indexContent = `# 🧠 ${wsName} — Master Index & Knowledge Orbit\n\n> Exported from BrainVault Spatial Knowledge Engine\n\n## 📊 Vault Structure Overview\n- 📂 Notes/ — Concept cards with YAML frontmatter links\n- 📂 Memos/ — Sticky memos\n- 📂 Canvas/ — BrainVault.canvas 2D spatial visual layout\n- 📂 .obsidian/ — Vault settings, Graph View colors & Properties types`;
+    filesData.set("00-Workspace-Index.md", {
+      path: "00-Workspace-Index.md",
+      type: "index",
+      title: "00-Workspace-Index.md",
+      size: `${(indexContent.length / 1024).toFixed(1)} KB`,
+      frontmatter: `---\ntitle: "${wsName}"\nvault_type: "brainvault-obsidian-vault"\ntotal_nodes: ${nodes.length}\ntotal_stickies: ${stickies.length}\ntotal_links: ${links.length}\ntags:\n  - brainvault\n  - knowledge-graph\n  - index\n---`,
+      body: indexContent,
+    });
+
+    // 2. Note files
+    nodes.forEach((n) => {
+      const sName = safeName(n.prompt);
+      const parentNode = n.parentId ? byId.get(n.parentId) : null;
+      const childNodes = nodes.filter((c) => c.parentId === n.id);
+      const outlinks = links.filter((l) => l.sourceId === n.id && byId.has(l.targetId)).map((l) => byId.get(l.targetId));
+      const inlinks = links.filter((l) => l.targetId === n.id && byId.has(l.sourceId)).map((l) => byId.get(l.sourceId));
+      const related = [...new Map([...outlinks, ...inlinks].filter((r) => r.id !== n.id).map((r) => [r.id, r])).values()];
+      const { level, path } = getHierarchy(n);
+
+      const parentLink = parentNode ? `[[Notes/${safeName(parentNode.prompt)}|${parentNode.prompt}]]` : "null";
+      const childrenList = childNodes.length
+        ? childNodes.map((c) => `  - "[[Notes/${safeName(c.prompt)}|${c.prompt}]]"`).join("\n")
+        : "  []";
+      const connectedList = related.length
+        ? related.map((r) => `  - "[[Notes/${safeName(r.prompt)}|${r.prompt}]]"`).join("\n")
+        : "  []";
+
+      const frontmatter = `---\nid: "${n.id}"\ntitle: "${n.prompt}"\ntype: "${n.isCustom ? "custom_note" : n.parentId ? "sub_node" : "primary_node"}"\nworkspace: "${wsName}"\nhierarchy_level: ${level}\nhierarchy_path: "${path}"\nparent: ${parentLink}\nchildren:\n${childrenList}\nconnected_links:\n${connectedList}\ntags:\n  - brainvault\n  - spatial-canvas\n  ${(n.tags || []).map((t) => `- "${t.replace(/^#/, "")}"`).join("\n  ")}\ncolor: "${n.color || "#00ff66"}"\n---`;
+
+      const body = `# ${n.prompt}\n\n> [!info] 🌿 Hierarchical Knowledge Branch\n> - **Workspace:** [[00-Workspace-Index|${wsName}]]\n> - **Hierarchy Depth:** Level ${level}\n> - **Knowledge Path:** \`${path}\`\n> - **Parent:** ${parentNode ? `[[Notes/${safeName(parentNode.prompt)}|${parentNode.prompt}]]` : "*(Root Constellation Node)*"}\n\n${childNodes.length ? `### 🌿 Sub-Node Branches (${childNodes.length})\n${childNodes.map((c) => `- [[Notes/${safeName(c.prompt)}|${c.prompt}]]`).join("\n")}\n\n` : ""}${related.length ? `### 🔗 Connected Concepts (${related.length})\n${related.map((r) => `- [[Notes/${safeName(r.prompt)}|${r.prompt}]]`).join("\n")}\n\n` : ""}## 📖 Research Notes & Intelligence\n\n${n.text || "*(No extended research notes written yet)*"}`;
+
+      filesData.set(`Notes/${sName}.md`, {
+        path: `Notes/${sName}.md`,
+        type: n.parentId ? "sub_node" : "primary_node",
+        title: `${sName}.md`,
+        size: `${((frontmatter.length + body.length) / 1024).toFixed(1)} KB`,
+        frontmatter,
+        body,
+        node: n,
+        level,
+        pathStr: path,
+        parentPrompt: parentNode?.prompt || null,
+        childrenCount: childNodes.length,
+      });
+    });
+
+    // 3. Memos
+    stickies.forEach((s, idx) => {
+      const memoName = `memo-${idx + 1}.md`;
+      const memoFm = `---\nid: "${s.id || `memo-${idx + 1}`}"\ntype: "sticky_memo"\nworkspace: "${wsName}"\ncolor: "${s.color || "#FEF08A"}"\ntags:\n  - brainvault\n  - sticky-memo\n---`;
+      const memoBody = `# 📌 Sticky Memo ${idx + 1}\n\n> [!note] Workspace Memo\n> Recorded in **[[00-Workspace-Index|${wsName}]]**\n\n${s.text || "*(Empty memo)*"}`;
+      filesData.set(`Memos/${memoName}`, {
+        path: `Memos/${memoName}`,
+        type: "memo",
+        title: memoName,
+        size: `${((memoFm.length + memoBody.length) / 1024).toFixed(1)} KB`,
+        frontmatter: memoFm,
+        body: memoBody,
+      });
+    });
+
+    // 4. Canvas file
+    filesData.set("Canvas/BrainVault.canvas", {
+      path: "Canvas/BrainVault.canvas",
+      type: "canvas",
+      title: "BrainVault.canvas",
+      size: `${(JSON.stringify(nodes).length / 1024).toFixed(1)} KB`,
+      frontmatter: `// Obsidian 2D Visual Canvas JSON Specification\n{\n  "nodes": [ ${nodes.length} cards + ${stickies.length} memos ],\n  "edges": [ ${links.length + nodes.filter((n) => n.parentId).length} directional arrows ]\n}`,
+      body: `This native Obsidian .canvas file reconstructs your spatial 2D concept canvas inside Obsidian's visual canvas renderer with directional hierarchy edges and custom card colors.`,
+    });
+
+    // 5. Config files
+    filesData.set(".obsidian/app.json", {
+      path: ".obsidian/app.json",
+      type: "config",
+      title: "app.json",
+      size: "0.2 KB",
+      frontmatter: `// Obsidian Workspace Defaults\n{\n  "attachmentFolderPath": "Attachments",\n  "newFileFolderPath": "Notes",\n  "livePreview": true,\n  "showLineNumber": true,\n  "foldHeading": true\n}`,
+      body: `Default settings for Obsidian editor, attachment paths, and live markdown preview.`,
+    });
+
+    filesData.set(".obsidian/graph.json", {
+      path: ".obsidian/graph.json",
+      type: "config",
+      title: "graph.json",
+      size: "0.6 KB",
+      frontmatter: `// Graph View Visual Preset\n{\n  "colorGroups": [\n    { "query": "path:Notes type: primary", "color": "Emerald Green" },\n    { "query": "path:Notes type: sub", "color": "Cyan Blue" },\n    { "query": "path:Memos", "color": "Amber Yellow" }\n  ]\n}`,
+      body: `Configures Obsidian's interactive Graph View (Ctrl+G) with distinct neural color clusters.`,
+    });
+
+    // Pre-calculate SVG Node positions for the Link Map (Uniform cards & clean row intervals)
+    const rootNodes = nodes.filter((n) => !n.parentId);
+    const subNodes = nodes.filter((n) => n.parentId);
+    const mapWidth = 940;
+    const maxRows = Math.max(rootNodes.length, subNodes.length, 1);
+    const cardHeight = 60;
+    const rowStep = 80;
+    const mapHeight = Math.max(440, maxRows * rowStep + 40);
+
+    const nodePositions = new Map();
+    // Position roots in column 1 (x: 50, width: 220, height: 60)
+    rootNodes.forEach((r, idx) => {
+      const y = 28 + idx * rowStep;
+      nodePositions.set(r.id, { x: 50, y, width: 220, height: cardHeight, isRoot: true, node: r });
+    });
+
+    // Position sub-nodes in column 2 (x: 500, width: 220, height: 60)
+    subNodes.forEach((s, idx) => {
+      const y = 28 + idx * rowStep;
+      nodePositions.set(s.id, { x: 500, y, width: 220, height: cardHeight, isRoot: false, node: s });
+    });
+
+    // SVG Connections (Parent -> Child)
+    let svgConduits = "";
+    subNodes.forEach((s) => {
+      const parentPos = nodePositions.get(s.parentId);
+      const childPos = nodePositions.get(s.id);
+      if (parentPos && childPos) {
+        const x1 = parentPos.x + parentPos.width;
+        const y1 = parentPos.y + parentPos.height / 2;
+        const x2 = childPos.x;
+        const y2 = childPos.y + childPos.height / 2;
+        const dx = Math.abs(x2 - x1) * 0.5;
+        svgConduits += `<path class="map-edge-path is-parent" d="M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}" marker-end="url(#mapArrowhead)" />`;
+      }
+    });
+
+    // SVG Connections (Explicit links)
+    links.forEach((l) => {
+      const sPos = nodePositions.get(l.sourceId);
+      const tPos = nodePositions.get(l.targetId);
+      if (sPos && tPos) {
+        const x1 = sPos.x + sPos.width / 2;
+        const y1 = sPos.y + sPos.height;
+        const x2 = tPos.x + tPos.width / 2;
+        const y2 = tPos.y;
+        svgConduits += `<path class="map-edge-path is-connected" d="M ${x1} ${y1} Q ${(x1 + x2) / 2} ${(y1 + y2) / 2 + 35} ${x2} ${y2}" />`;
+      }
+    });
+
+    // SVG Node cards
+    let svgNodesHtml = "";
+    nodePositions.forEach((pos, id) => {
+      const n = pos.node;
+      const stroke = pos.isRoot ? "#10b981" : "#38bdf8";
+      const tagText = pos.isRoot ? "ROOT" : "SUB-NODE";
+      const badgeBg = pos.isRoot ? "rgba(16, 185, 129, 0.2)" : "rgba(56, 189, 248, 0.2)";
+      const label = n.prompt.length > 24 ? n.prompt.slice(0, 22) + "..." : n.prompt;
+
+      svgNodesHtml += `
+        <g class="map-node-card" data-node-id="${id}" transform="translate(${pos.x}, ${pos.y})">
+          <rect width="${pos.width}" height="${pos.height}" rx="10" fill="rgba(12, 18, 26, 0.94)" stroke="${stroke}" stroke-width="1.8" />
+          <rect x="8" y="8" width="50" height="16" rx="4" fill="${badgeBg}" />
+          <text x="33" y="19" fill="${stroke}" font-size="9" font-family="monospace" font-weight="700" text-anchor="middle">${tagText}</text>
+          <text x="14" y="42" fill="#ffffff" font-size="12" font-family="'Tomorrow', sans-serif" font-weight="700">${escapeHtml(label)}</text>
+        </g>
+      `;
+    });
+
+    // File Tree HTML Generator
+    const treeNotesHtml = nodes
+      .map((n) => {
+        const sName = safeName(n.prompt);
+        const isSub = Boolean(n.parentId);
+        const iconSymbol = isSub ? "🔗" : "🌿";
+        const badgeLabel = isSub ? "sub" : "root";
+        return `
+          <div class="tree-file-row ${!isSub ? "is-root" : ""}" data-file-path="Notes/${sName}.md">
+            <div class="tree-file-left">
+              <span>${iconSymbol}</span>
+              <span class="tree-file-name">${escapeHtml(sName)}.md</span>
+            </div>
+            <span class="tree-file-badge">${badgeLabel}</span>
+          </div>
+        `;
+      })
+      .join("");
+
+    const treeMemosHtml = stickies
+      .map(
+        (_, idx) => `
+          <div class="tree-file-row" data-file-path="Memos/memo-${idx + 1}.md">
+            <div class="tree-file-left">
+              <span>📌</span>
+              <span class="tree-file-name">memo-${idx + 1}.md</span>
+            </div>
+            <span class="tree-file-badge">memo</span>
+          </div>
+        `
+      )
+      .join("");
+
+    // Metadata Table Rows
+    const tableRowsHtml = nodes
+      .map((n) => {
+        const sName = safeName(n.prompt);
+        const parentNode = n.parentId ? byId.get(n.parentId) : null;
+        const childCount = nodes.filter((c) => c.parentId === n.id).length;
+        const outlinks = links.filter((l) => l.sourceId === n.id && byId.has(l.targetId));
+        const { level, path } = getHierarchy(n);
+        const parentLink = parentNode ? `[[Notes/${safeName(parentNode.prompt)}|${parentNode.prompt}]]` : "*(Root)*";
+        const tagStr = (n.tags || []).map((t) => `#${t.replace(/^#/, "")}`).join(" ") || "#research";
+        return `
+          <tr>
+            <td><strong style="color:#c084fc;">Notes/${escapeHtml(sName)}.md</strong></td>
+            <td><span class="tree-file-badge">${n.parentId ? "Level " + level + " (Sub)" : "Level 0 (Root)"}</span></td>
+            <td><code>${escapeHtml(parentLink)}</code></td>
+            <td><span style="color:#38bdf8;">${childCount} children</span></td>
+            <td><span style="color:#c084fc;">${outlinks.length} outlinks</span></td>
+            <td><code style="color:#94a3b8;font-size:10px;">${escapeHtml(path)}</code></td>
+            <td><span style="color:#10b981;">${escapeHtml(tagStr)}</span></td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const totalFiles = 1 + nodes.length + stickies.length + 1 + 2; // index + notes + memos + canvas + configs
+
+    // Render Preview Modal
+    this.openModal(`
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow">OBSIDIAN ARCHIVE INSPECTOR &amp; PREVIEW</span>
+          <h2>Visual Vault Architecture &amp; Link Map</h2>
+          <p>${escapeHtml(wsName)} &bull; ${nodes.length} Notes &bull; ${links.length} Connected Links &bull; ${stickies.length} Memos</p>
+        </div>
+        <div class="obsidian-head-controls">
+          <div class="obsidian-nav-tabs" role="tablist">
+            <button type="button" class="obsidian-tab-btn is-active" data-obsidian-tab="tree">
+              ${icon("folder", 13)}
+              <span>Folder &amp; Files</span>
+            </button>
+            <button type="button" class="obsidian-tab-btn" data-obsidian-tab="map">
+              ${icon("compass", 13)}
+              <span>Visual Link Map</span>
+            </button>
+            <button type="button" class="obsidian-tab-btn" data-obsidian-tab="schema">
+              ${icon("grid", 13)}
+              <span>YAML Metadata</span>
+            </button>
+          </div>
+          <button class="icon-btn" data-close-modal aria-label="Close">${icon("x", 18)}</button>
+        </div>
+      </div>
+
+      <div class="modal-body obsidian-preview-body">
+        <!-- TAB 1: FOLDER EXPLORER & LIVE FILE INSPECTOR -->
+        <div id="obsidianTabTree" class="obsidian-tab-panel">
+          <div class="obsidian-split-view">
+            <!-- Left: Tree Explorer -->
+            <div class="obsidian-file-tree">
+              <div class="tree-folder-head">
+                <span>📁</span>
+                <span>VAULT ROOT</span>
+              </div>
+              <div class="tree-file-row is-active" data-file-path="00-Workspace-Index.md">
+                <div class="tree-file-left">
+                  <span>📄</span>
+                  <span class="tree-file-name">00-Workspace-Index.md</span>
+                </div>
+                <span class="tree-file-badge">index</span>
+              </div>
+
+              <!-- Notes Folder -->
+              <div class="tree-folder">
+                <div class="tree-folder-head">
+                  <span>📂</span>
+                  <span>Notes/ (${nodes.length})</span>
+                </div>
+                <div class="tree-folder-items">
+                  ${treeNotesHtml}
+                </div>
+              </div>
+
+              <!-- Memos Folder -->
+              ${
+                stickies.length
+                  ? `
+                <div class="tree-folder">
+                  <div class="tree-folder-head">
+                    <span>📂</span>
+                    <span>Memos/ (${stickies.length})</span>
+                  </div>
+                  <div class="tree-folder-items">
+                    ${treeMemosHtml}
+                  </div>
+                </div>
+              `
+                  : ""
+              }
+
+              <!-- Canvas Folder -->
+              <div class="tree-folder">
+                <div class="tree-folder-head">
+                  <span>📂</span>
+                  <span>Canvas/</span>
+                </div>
+                <div class="tree-folder-items">
+                  <div class="tree-file-row" data-file-path="Canvas/BrainVault.canvas">
+                    <div class="tree-file-left">
+                      <span>🗺️</span>
+                      <span class="tree-file-name">BrainVault.canvas</span>
+                    </div>
+                    <span class="tree-file-badge">canvas</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- .obsidian Config Folder -->
+              <div class="tree-folder">
+                <div class="tree-folder-head">
+                  <span>⚙️</span>
+                  <span>.obsidian/ (Config)</span>
+                </div>
+                <div class="tree-folder-items">
+                  <div class="tree-file-row" data-file-path=".obsidian/app.json">
+                    <div class="tree-file-left">
+                      <span>⚙️</span>
+                      <span class="tree-file-name">app.json</span>
+                    </div>
+                    <span class="tree-file-badge">json</span>
+                  </div>
+                  <div class="tree-file-row" data-file-path=".obsidian/graph.json">
+                    <div class="tree-file-left">
+                      <span>🎨</span>
+                      <span class="tree-file-name">graph.json</span>
+                    </div>
+                    <span class="tree-file-badge">graph</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: File Inspector -->
+            <div class="obsidian-file-inspector">
+              <div class="inspector-meta-bar">
+                <span class="inspector-filename" id="inspectorFilePath">00-Workspace-Index.md</span>
+                <div class="inspector-pills">
+                  <span class="inspector-pill" id="inspectorFileType">Master Vault Index</span>
+                  <span class="inspector-pill" id="inspectorFileSize">2.3 KB</span>
+                </div>
+              </div>
+
+              <div>
+                <div class="yaml-box-header">
+                  <span>YAML Frontmatter Links &amp; Properties</span>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <button type="button" class="btn-copy-yaml" id="btnCopyYaml" title="Copy YAML frontmatter to clipboard">Copy YAML</button>
+                    <span style="font-size:8.5px;color:#94a3b8;">Obsidian Properties Native</span>
+                  </div>
+                </div>
+                <pre class="obsidian-yaml-box" id="inspectorYamlBox">---
+title: "${wsName}"
+vault_type: "brainvault-obsidian-vault"
+total_nodes: ${nodes.length}
+tags:
+  - brainvault
+  - knowledge-graph
+---</pre>
+              </div>
+
+              <div>
+                <div class="yaml-box-header">
+                  <span>Markdown Document Body</span>
+                  <span style="font-size:8.5px;color:#94a3b8;">Rendered Content Preview</span>
+                </div>
+                <div class="obsidian-body-preview" id="inspectorBodyPreview"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: VISUAL LINK MAP (SVG GRAPH) -->
+        <div id="obsidianTabMap" class="obsidian-tab-panel is-hidden">
+          <div class="obsidian-map-wrap">
+            <svg class="obsidian-svg-map" viewBox="0 0 ${mapWidth} ${mapHeight}">
+              <defs>
+                <marker id="mapArrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <polygon points="0 0, 8 4, 0 8" fill="#10b981" />
+                </marker>
+              </defs>
+              <!-- Conduits Layer -->
+              <g id="mapConduits">${svgConduits}</g>
+              <!-- Nodes Layer -->
+              <g id="mapNodes">${svgNodesHtml}</g>
+            </svg>
+
+            <!-- Floating Info Bar for Clicked/Hovered Node -->
+            <div class="map-info-floating" id="mapFloatingInfo">
+              <div>
+                <span style="font-size:9px;color:#c084fc;font-family:monospace;letter-spacing:0.06em;font-weight:700;">ACTIVE LINK MAP SELECTION</span>
+                <div class="map-info-title" id="mapInfoTitle">Hover or click any node to inspect YAML links &amp; relationships</div>
+              </div>
+              <div class="map-info-links" id="mapInfoLinks">
+                <span>Click node in map to jump to file</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: YAML METADATA TABLE -->
+        <div id="obsidianTabSchema" class="obsidian-tab-panel is-hidden">
+          <div class="obsidian-table-wrap">
+            <table class="obsidian-schema-table">
+              <thead>
+                <tr>
+                  <th>NOTE FILENAME</th>
+                  <th>HIERARCHY</th>
+                  <th>YAML PARENT LINK</th>
+                  <th>CHILDREN</th>
+                  <th>OUTLINKS</th>
+                  <th>HIERARCHY PATH</th>
+                  <th>TAGS</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- BOTTOM ACTION FOOTER -->
+        <div class="obsidian-preview-footer">
+          <div class="obsidian-stat-cluster">
+            <span class="obsidian-stat-pill">📁 4 Folders</span>
+            <span class="obsidian-stat-pill">📄 ${totalFiles} Total Files</span>
+            <span class="obsidian-stat-pill">🔗 ${links.length} Hierarchical Links</span>
+            <span class="obsidian-stat-pill">🗺️ 1 Obsidian .canvas</span>
+          </div>
+
+          <div class="obsidian-footer-actions">
+            <button type="button" class="btn" id="btnObsidianBackToFormats" title="Return to all export formats">
+              &larr; Back to Formats
+            </button>
+            <button type="button" class="btn accent-btn-obsidian" id="btnConfirmDownloadVault" title="Download formatted Obsidian vault (.zip)">
+              ${icon("download", 14)}
+              <span>Download Obsidian Vault (.zip)</span>
+              <span class="btn-arrow">&rarr;</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Wire Interactive Elements inside the Modal
+    const modalRoot = this.modalRoot;
+
+    // 1. Tab Switching
+    const tabBtns = modalRoot.querySelectorAll(".obsidian-tab-btn");
+    const tabPanels = {
+      tree: modalRoot.querySelector("#obsidianTabTree"),
+      map: modalRoot.querySelector("#obsidianTabMap"),
+      schema: modalRoot.querySelector("#obsidianTabSchema"),
+    };
+
+    tabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabBtns.forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        const tabKey = btn.dataset.obsidianTab;
+        Object.entries(tabPanels).forEach(([k, panel]) => {
+          if (panel) {
+            if (k === tabKey) panel.classList.remove("is-hidden");
+            else panel.classList.add("is-hidden");
+          }
+        });
+      });
+    });
+
+    // 2. File Explorer Selection & Live Inspector
+    const fileRows = modalRoot.querySelectorAll(".tree-file-row");
+    const inspectorPath = modalRoot.querySelector("#inspectorFilePath");
+    const inspectorType = modalRoot.querySelector("#inspectorFileType");
+    const inspectorSize = modalRoot.querySelector("#inspectorFileSize");
+    const inspectorYaml = modalRoot.querySelector("#inspectorYamlBox");
+    const inspectorBody = modalRoot.querySelector("#inspectorBodyPreview");
+
+    const selectFile = (pathKey) => {
+      const fileData = filesData.get(pathKey);
+      if (!fileData) return;
+      fileRows.forEach((r) => r.classList.toggle("is-active", r.dataset.filePath === pathKey));
+      if (inspectorPath) inspectorPath.textContent = fileData.path;
+      if (inspectorType) inspectorType.textContent = fileData.type.toUpperCase();
+      if (inspectorSize) inspectorSize.textContent = fileData.size;
+      if (inspectorYaml) inspectorYaml.textContent = fileData.frontmatter;
+      if (inspectorBody) inspectorBody.textContent = fileData.body;
+    };
+
+    fileRows.forEach((row) => {
+      row.addEventListener("click", () => {
+        const pathKey = row.dataset.filePath;
+        selectFile(pathKey);
+      });
+    });
+
+    // Initial selection
+    selectFile("00-Workspace-Index.md");
+
+    // 3. Link Map Hover & Click Interactions
+    const mapNodes = modalRoot.querySelectorAll(".map-node-card");
+    const mapTitle = modalRoot.querySelector("#mapInfoTitle");
+    const mapLinks = modalRoot.querySelector("#mapInfoLinks");
+
+    mapNodes.forEach((card) => {
+      const nodeId = card.dataset.nodeId;
+      const n = byId.get(nodeId);
+      if (!n) return;
+      card.addEventListener("mouseenter", () => {
+        const sName = safeName(n.prompt);
+        const parentNode = n.parentId ? byId.get(n.parentId) : null;
+        const childCount = nodes.filter((c) => c.parentId === n.id).length;
+        if (mapTitle) mapTitle.textContent = `${n.prompt} (Notes/${sName}.md)`;
+        if (mapLinks) {
+          mapLinks.innerHTML = `
+            <span>Parent: <b>${parentNode ? parentNode.prompt : "Root Topic"}</b></span> &bull; 
+            <span>Sub-Nodes: <b>${childCount}</b></span> &bull; 
+            <span>Click to view file</span>
+          `;
+        }
+      });
+
+      card.addEventListener("click", () => {
+        const sName = safeName(n.prompt);
+        // Switch to tree tab and select file
+        const treeTabBtn = modalRoot.querySelector('[data-obsidian-tab="tree"]');
+        if (treeTabBtn) treeTabBtn.click();
+        selectFile(`Notes/${sName}.md`);
+      });
+    });
+
+    // 4. Action Buttons
+    const copyYamlBtn = modalRoot.querySelector("#btnCopyYaml");
+    if (copyYamlBtn) {
+      copyYamlBtn.addEventListener("click", async () => {
+        const text = inspectorYaml?.textContent || "";
+        if (text && navigator.clipboard) {
+          try {
+            await navigator.clipboard.writeText(text);
+            copyYamlBtn.textContent = "COPIED ✓";
+            setTimeout(() => {
+              if (copyYamlBtn) copyYamlBtn.textContent = "Copy YAML";
+            }, 1800);
+            this.toast?.("YAML frontmatter copied to clipboard!");
+          } catch (_) {}
+        }
+      });
+    }
+
+    const backBtn = modalRoot.querySelector("#btnObsidianBackToFormats");
+    if (backBtn) {
+      backBtn.addEventListener("click", () => this.openExport());
+    }
+
+    const downloadVaultBtn = modalRoot.querySelector("#btnConfirmDownloadVault");
+    if (downloadVaultBtn) {
+      downloadVaultBtn.addEventListener("click", () => {
+        this.downloadCards("obsidian");
+      });
+    }
   }
 
   downloadCards(format) {
@@ -2195,8 +2979,10 @@ export class UI {
 
   modalAction(action) {
     if (action === "sample") this.explore("Cyber Threat Intelligence");
+    if (action === "preview-obsidian") this.openObsidianPreview();
+    if (action === "export-obsidian" || action === "export-obsidian-zip") this.downloadCards("obsidian");
+    if (action === "export-obsidian-md") this.downloadCards("obsidian-md");
     if (action === "export-html") this.downloadCards("html");
-    if (action === "export-obsidian") this.downloadCards("obsidian");
     if (action === "export-pdf") this.downloadCards("pdf");
     if (action === "export-doc") this.downloadCards("doc");
     if (action === "export-txt") this.downloadCards("txt");

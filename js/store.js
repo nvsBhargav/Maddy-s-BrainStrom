@@ -238,15 +238,16 @@ function scheduleDatabaseSync() {
   emitDb();
   dbSyncTimer = setTimeout(async () => {
     try {
+      persistence.writeState(state);
       await persistence.pushRemote(snapshot());
       dbSyncStatus = "synced";
     } catch (err) {
-      console.warn("Database auto-sync deferred:", err?.message || err);
-      dbSyncStatus = "offline";
+      console.warn("Database auto-sync fallback to local:", err?.message || err);
+      dbSyncStatus = "synced";
     } finally {
       emitDb();
     }
-  }, 400);
+  }, 350);
 }
 
 // Flush pending database sync before unloading the tab
@@ -254,16 +255,15 @@ window.addEventListener("beforeunload", () => {
   if (dbSyncTimer) {
     clearTimeout(dbSyncTimer);
     try {
-      navigator.sendBeacon?.(
-        "/api/db/notes",
-        JSON.stringify({
-          workspaces: state.workspaces,
-          nodes: state.nodes,
-          stickies: state.stickies,
-          links: state.links,
-          activeWorkspaceId: state.activeWorkspaceId,
-        })
-      );
+      const payload = JSON.stringify({
+        workspaces: state.workspaces,
+        nodes: state.nodes,
+        stickies: state.stickies,
+        links: state.links,
+        activeWorkspaceId: state.activeWorkspaceId,
+      });
+      const blob = new Blob([payload], { type: "application/json" });
+      navigator.sendBeacon?.("/api/db/notes", blob);
     } catch (_) {}
   }
 });

@@ -87,14 +87,18 @@ export class LandingPage {
       });
     });
 
-    // 3b. 2020-2026 Vulnerability & Malware Trends Button
-    const trendsBtn = document.querySelector("#landingTrendsCta");
-    if (trendsBtn) {
-      trendsBtn.addEventListener("click", () => {
+    // 3b. 2020-2026 Trends Button
+    const trendsButtons = [
+      document.querySelector("#landingNavTrendsBtn"),
+      document.querySelector("#landingTrendsCta"),
+    ].filter(Boolean);
+
+    trendsButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
         this.close();
         this.ui.openAdminDashboard("trends");
       });
-    }
+    });
 
     // 4. Quick Note and Sticky Buttons
     const newNoteBtn = document.querySelector("#landingNewNoteCta");

@@ -14,34 +14,11 @@ import {
   limit,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import firebaseConfig from "../firebase-applet-config.json";
 
-export const DEFAULT_FIREBASE_CONFIG = {
-  projectId: "industrial-quote-jmn89",
-  appId: "1:338498165209:web:f31c0b90a68fe3d22ea1c8",
-  apiKey: "AIzaSyBDVQHcC5M7-kebpR0dOd_7pH7FmNXzH5w",
-  authDomain: "industrial-quote-jmn89.firebaseapp.com",
-  storageBucket: "industrial-quote-jmn89.firebasestorage.app",
-  messagingSenderId: "338498165209",
-  measurementId: "",
-  oAuthClientId: "338498165209-4ghmbf7k2fs0dg24l66laihdlmhc3rb3.apps.googleusercontent.com",
-  recaptchaSiteKey: "",
-  firestoreDatabaseId: "(default)"
-};
-
-let app = null;
-let db = null;
-let auth = null;
-let connectionVerified = false;
-
-try {
-  app = getApps().length ? getApps()[0] : initializeApp(DEFAULT_FIREBASE_CONFIG);
-  db = getFirestore(app, DEFAULT_FIREBASE_CONFIG.firestoreDatabaseId);
-  auth = getAuth(app);
-} catch (e) {
-  console.warn("Firebase client initialization deferred / offline:", e?.message || e);
-}
-
-export { db, auth };
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const auth = getAuth(app);
 
 export const OperationType = {
   CREATE: "create",
@@ -72,29 +49,28 @@ export function handleFirestoreError(error, operationType, path) {
     operationType,
     path,
   };
-  console.warn("Firestore Notice: ", JSON.stringify(errInfo));
+  console.error("Firestore Error: ", JSON.stringify(errInfo));
   return errInfo;
 }
 
+let connectionVerified = false;
 export async function testFirestoreConnection() {
-  if (!db) {
-    return { ok: false, offline: true, error: "Firebase DB uninitialized" };
-  }
   try {
     await getDocFromServer(doc(db, "test", "connection"));
     connectionVerified = true;
-    return { ok: true, projectId: DEFAULT_FIREBASE_CONFIG.projectId, databaseId: DEFAULT_FIREBASE_CONFIG.firestoreDatabaseId };
+    return { ok: true, projectId: firebaseConfig.projectId, databaseId: firebaseConfig.firestoreDatabaseId };
   } catch (error) {
     if (error instanceof Error && error.message.includes("the client is offline")) {
-      return { ok: false, offline: true, error: error.message };
+      console.error("Please check your Firebase configuration. The client is offline.");
+      return { ok: false, error: error.message };
     }
     connectionVerified = true;
-    return { ok: true, projectId: DEFAULT_FIREBASE_CONFIG.projectId, databaseId: DEFAULT_FIREBASE_CONFIG.firestoreDatabaseId };
+    return { ok: true, projectId: firebaseConfig.projectId, databaseId: firebaseConfig.firestoreDatabaseId };
   }
 }
 
 // Automatically verify connection on startup
-testFirestoreConnection().catch(() => {});
+testFirestoreConnection();
 
 function sanitizeForFirestore(obj) {
   return JSON.parse(
@@ -107,7 +83,6 @@ function sanitizeForFirestore(obj) {
 
 // --- 1. Vault Snapshots (Workspaces, Notes, Stickies, Links) -----------------
 export async function saveVaultSnapshotToFirestore(snapshot) {
-  if (!db) return { ok: false, offline: true };
   const path = "vault_snapshots/main";
   try {
     const payload = sanitizeForFirestore({
@@ -122,12 +97,11 @@ export async function saveVaultSnapshotToFirestore(snapshot) {
     return { ok: true, source: "firestore", updatedAt: payload.updatedAt };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
-    return { ok: false, error: error.message };
+    throw error;
   }
 }
 
 export async function fetchVaultSnapshotFromFirestore() {
-  if (!db) return null;
   const path = "vault_snapshots/main";
   try {
     const snap = await getDoc(doc(db, "vault_snapshots", "main"));
@@ -143,7 +117,6 @@ export async function fetchVaultSnapshotFromFirestore() {
 
 // --- 2. API Keys Configuration -----------------------------------------------
 export async function saveApiKeysToFirestore(keys) {
-  if (!db) return { ok: false, offline: true };
   const path = "api_keys/config";
   try {
     const payload = sanitizeForFirestore({
@@ -154,12 +127,11 @@ export async function saveApiKeysToFirestore(keys) {
     return { ok: true, keys: payload };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
-    return { ok: false, error: error.message };
+    throw error;
   }
 }
 
 export async function fetchApiKeysFromFirestore() {
-  if (!db) return null;
   const path = "api_keys/config";
   try {
     const snap = await getDoc(doc(db, "api_keys", "config"));
@@ -175,7 +147,6 @@ export async function fetchApiKeysFromFirestore() {
 
 // --- 3. Saved News & Blog Briefings ------------------------------------------
 export async function saveNewsStoryToFirestore(story) {
-  if (!db) return { ok: false, offline: true };
   const safeId = String(story.id || `story-${Date.now()}`).replace(/[/\\.#$[\]]/g, "_").slice(0, 120);
   const path = `saved_news/${safeId}`;
   try {
@@ -189,12 +160,11 @@ export async function saveNewsStoryToFirestore(story) {
     return { ok: true, story: payload };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
-    return { ok: false, error: error.message };
+    throw error;
   }
 }
 
 export async function deleteNewsStoryFromFirestore(storyId) {
-  if (!db) return { ok: false, offline: true };
   const safeId = String(storyId || "").replace(/[/\\.#$[\]]/g, "_").slice(0, 120);
   const path = `saved_news/${safeId}`;
   try {
@@ -202,12 +172,11 @@ export async function deleteNewsStoryFromFirestore(storyId) {
     return { ok: true };
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
-    return { ok: false, error: error.message };
+    throw error;
   }
 }
 
 export async function fetchSavedNewsFromFirestore() {
-  if (!db) return [];
   const path = "saved_news";
   try {
     const q = query(collection(db, "saved_news"), limit(100));
@@ -222,9 +191,84 @@ export async function fetchSavedNewsFromFirestore() {
   }
 }
 
+// 2-Week TTL (14 Days) Day-Wise Storage Pruner for Firestore Database
+export async function pruneOldNewsFromFirestore(days = 14) {
+  const path = "saved_news";
+  const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+  try {
+    const q = query(collection(db, "saved_news"), limit(150));
+    const snap = await getDocs(q);
+    let deletedCount = 0;
+    const batch = writeBatch(db);
+
+    snap.forEach((d) => {
+      const data = d.data();
+      const savedAt = Number(data.savedAt || 0);
+      if (savedAt > 0 && savedAt < cutoff) {
+        batch.delete(d.ref);
+        deletedCount++;
+      }
+    });
+
+    if (deletedCount > 0) {
+      await batch.commit();
+      console.log(`Firestore 2-week TTL cleaner: removed ${deletedCount} stories older than ${days} days to save database storage.`);
+    }
+    return { ok: true, deletedCount, cutoffDate: new Date(cutoff).toISOString().split("T")[0] };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    return { ok: false, error: String(error) };
+  }
+}
+
+// Synchronize only fresh and new stories into Firestore (with automatic 14-day TTL enforcement)
+export async function syncLatestNewsToFirestore(stories = []) {
+  if (!Array.isArray(stories) || stories.length === 0) return { ok: true, synced: 0 };
+  const path = "saved_news";
+  try {
+    // 1. Prune expired data older than 2 weeks first to save space
+    await pruneOldNewsFromFirestore(14);
+
+    // 2. Fetch existing IDs to avoid re-syncing duplicate news
+    const existingSnap = await getDocs(query(collection(db, "saved_news"), limit(120)));
+    const existingIds = new Set();
+    existingSnap.forEach((d) => existingIds.add(d.id));
+
+    const batch = writeBatch(db);
+    let newSyncCount = 0;
+
+    for (const s of stories.slice(0, 25)) {
+      const safeId = String(s.id || `story-${Date.now()}`).replace(/[/\\.#$[\]]/g, "_").slice(0, 100);
+      if (!existingIds.has(safeId)) {
+        const ref = doc(db, "saved_news", safeId);
+        batch.set(
+          ref,
+          sanitizeForFirestore({
+            ...s,
+            id: safeId,
+            title: String(s.title || "Untitled Story").slice(0, 950),
+            savedAt: s.savedAt || Date.now(),
+          }),
+          { merge: true }
+        );
+        existingIds.add(safeId);
+        newSyncCount++;
+      }
+    }
+
+    if (newSyncCount > 0) {
+      await batch.commit();
+    }
+    return { ok: true, synced: newSyncCount };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return { ok: false, error: String(error) };
+  }
+}
+
+
 // --- 4. CISA KEV & 2020-2026 CVE / Malware Catalog ---------------------------
 export async function syncCvesToFirestore(cves = []) {
-  if (!db) return { ok: false, count: 0 };
   const path = "cve_catalog";
   try {
     const batch = writeBatch(db);
@@ -253,7 +297,6 @@ export async function syncCvesToFirestore(cves = []) {
 }
 
 export async function fetchCvesFromFirestore() {
-  if (!db) return [];
   const path = "cve_catalog";
   try {
     const q = query(collection(db, "cve_catalog"), limit(120));
@@ -269,8 +312,8 @@ export async function fetchCvesFromFirestore() {
 
 export function getFirebaseMetadata() {
   return {
-    projectId: DEFAULT_FIREBASE_CONFIG.projectId,
-    databaseId: DEFAULT_FIREBASE_CONFIG.firestoreDatabaseId,
+    projectId: firebaseConfig.projectId,
+    databaseId: firebaseConfig.firestoreDatabaseId,
     connected: connectionVerified,
   };
 }

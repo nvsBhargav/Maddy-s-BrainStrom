@@ -508,3 +508,503 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
+// --- Pure Offline Client-Side ZIP Generator for Obsidian Vault ---
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function calculateCrc32(bytes: Uint8Array): number {
+  let crc = 0 ^ -1;
+  for (let i = 0; i < bytes.length; i++) {
+    crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xff];
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+export function createZipBlob(files: { path: string; content: string }[]): Blob {
+  const encoder = new TextEncoder();
+  const fileRecords: {
+    nameBytes: Uint8Array;
+    crc: number;
+    size: number;
+    offset: number;
+    dosTime: number;
+    dosDate: number;
+  }[] = [];
+  let offset = 0;
+  const parts: (Uint8Array | ArrayBuffer)[] = [];
+
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xffff;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
+
+  for (const f of files) {
+    const nameBytes = encoder.encode(f.path.replace(/\\/g, '/'));
+    const dataBytes = encoder.encode(f.content);
+    const crc = calculateCrc32(dataBytes);
+    const size = dataBytes.length;
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(localHeader.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, dosTime, true);
+    lv.setUint16(12, dosDate, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+
+    parts.push(localHeader);
+    parts.push(dataBytes);
+
+    fileRecords.push({
+      nameBytes,
+      crc,
+      size,
+      offset,
+      dosTime,
+      dosDate,
+    });
+
+    offset += localHeader.length + size;
+  }
+
+  const centralDirStart = offset;
+  let centralDirSize = 0;
+
+  for (const rec of fileRecords) {
+    const cdHeader = new Uint8Array(46 + rec.nameBytes.length);
+    const cv = new DataView(cdHeader.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, rec.dosTime, true);
+    cv.setUint16(14, rec.dosDate, true);
+    cv.setUint32(16, rec.crc, true);
+    cv.setUint32(20, rec.size, true);
+    cv.setUint32(24, rec.size, true);
+    cv.setUint16(28, rec.nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, rec.offset, true);
+    cdHeader.set(rec.nameBytes, 46);
+
+    parts.push(cdHeader);
+    centralDirSize += cdHeader.length;
+  }
+
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, fileRecords.length, true);
+  ev.setUint16(10, fileRecords.length, true);
+  ev.setUint32(12, centralDirSize, true);
+  ev.setUint32(16, centralDirStart, true);
+  ev.setUint16(20, 0, true);
+
+  parts.push(eocd);
+  return new Blob(parts, { type: 'application/zip' });
+}
+
+function safeObsidianFilename(title: string): string {
+  return String(title || 'Untitled Note')
+    .replace(/[/\\:*?"<>|#^[\]]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'Untitled Note';
+}
+
+function escapeYamlString(val: string): string {
+  return String(val || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/**
+ * Builds an Obsidian-compatible Markdown vault folder structure with YAML frontmatter links,
+ * breadcrumbs, native Canvas visual file, and custom Graph view settings.
+ */
+export function generateObsidianVaultZip(
+  nodes: GridNodeData[],
+  workspaceName: string = 'Current Workspace',
+  stickyNotes: StickyNoteData[] = []
+): Blob {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const files: { path: string; content: string }[] = [];
+
+  function getHierarchyInfo(node: GridNodeData) {
+    let level = 0;
+    let curr = node;
+    const pathItems = [node.prompt];
+    const visited = new Set([node.id]);
+    while (curr.parentId && byId.has(curr.parentId) && level < 25) {
+      curr = byId.get(curr.parentId)!;
+      if (visited.has(curr.id)) break;
+      visited.add(curr.id);
+      pathItems.unshift(curr.prompt);
+      level++;
+    }
+    return { level, path: pathItems.join(' / ') };
+  }
+
+  // 1. Individual Note Files in Notes/
+  for (const n of nodes) {
+    const version = n.versions[n.versionIndex] || n;
+    const parentNode = n.parentId ? byId.get(n.parentId) : null;
+    const childNodes = nodes.filter((cand) => cand.parentId === n.id);
+    const { level, path } = getHierarchyInfo(n);
+    const safeTitle = safeObsidianFilename(n.prompt);
+    const parentSafe = parentNode ? safeObsidianFilename(parentNode.prompt) : null;
+
+    // Preserving hierarchical relationships as YAML frontmatter links
+    const cardFrontmatter = [
+      '---',
+      `id: "${n.id}"`,
+      `title: "${escapeYamlString(n.prompt)}"`,
+      `type: "${n.isCustom ? 'custom_note' : n.parentId ? 'sub_node' : 'primary_node'}"`,
+      `workspace: "${escapeYamlString(workspaceName)}"`,
+      `hierarchy_level: ${level}`,
+      `hierarchy_path: "${escapeYamlString(path)}"`,
+      parentNode ? `parent: "[[Notes/${parentSafe}|${escapeYamlString(parentNode.prompt)}]]"` : 'parent: null',
+      parentNode ? `parent_title: "${escapeYamlString(parentNode.prompt)}"` : null,
+      'children:',
+      ...(childNodes.length
+        ? childNodes.map((c) => `  - "[[Notes/${safeObsidianFilename(c.prompt)}|${escapeYamlString(c.prompt)}]]"`)
+        : ['  []']),
+      'tags:',
+      '  - brainvault',
+      '  - spatial-canvas',
+      ...(n.isCustom ? ['  - custom-note'] : n.parentId ? ['  - sub-node'] : ['  - primary-topic']),
+      `created: "${new Date().toISOString()}"`,
+      'aliases:',
+      `  - "${escapeYamlString(n.prompt)}"`,
+      '---',
+    ].filter(Boolean);
+
+    const bodyLines = [
+      ...cardFrontmatter,
+      '',
+      `# ${n.prompt}`,
+      '',
+      `> [!info] 🌿 Hierarchical Knowledge Branch`,
+      `> - **Workspace:** [[00-Workspace-Index|${workspaceName}]]`,
+      `> - **Hierarchy Depth:** Level ${level} (${n.isCustom ? 'Custom Note' : n.parentId ? 'Sub-Node' : 'Primary Root Node'})`,
+      `> - **Knowledge Path:** \`${path}\``,
+      parentNode ? `> - **Parent Branch:** [[Notes/${parentSafe}|${parentNode.prompt}]]` : `> - **Parent:** *(Root Constellation Node)*`,
+      '',
+    ];
+
+    if (childNodes.length) {
+      bodyLines.push(
+        `### 🌿 Sub-Node Branches (${childNodes.length})`,
+        ...childNodes.map((c) => `- [[Notes/${safeObsidianFilename(c.prompt)}|${c.prompt}]]`),
+        ''
+      );
+    }
+
+    bodyLines.push(
+      '---',
+      '',
+      '## 📖 Research Notes & Intelligence',
+      '',
+      version.text ? version.text.trim() : '*(No extended research notes written yet)*',
+      ''
+    );
+
+    if (n.codeSnippet?.code) {
+      bodyLines.push(
+        `\`\`\`${n.codeSnippet.language || 'text'}`,
+        n.codeSnippet.code,
+        '```',
+        ''
+      );
+    }
+
+    if (version.prompts && version.prompts.length > 0) {
+      bodyLines.push(
+        '### 💡 Exploration Branches',
+        ...version.prompts.map((p) => `- ${p}`),
+        ''
+      );
+    }
+
+    bodyLines.push(
+      '---',
+      `*Exported from BrainVault Spatial Knowledge Engine on ${new Date().toLocaleString()}*`
+    );
+
+    files.push({
+      path: `Notes/${safeTitle}.md`,
+      content: bodyLines.join('\n'),
+    });
+  }
+
+  // 2. Sticky Memos in Memos/
+  stickyNotes.forEach((s, idx) => {
+    const memoContent = [
+      '---',
+      `id: "${s.id || `memo-${idx + 1}`}"`,
+      `type: "sticky_memo"`,
+      `workspace: "${escapeYamlString(workspaceName)}"`,
+      `color: "${s.color || '#FEF08A'}"`,
+      'tags:',
+      '  - brainvault',
+      '  - sticky-memo',
+      `created: "${new Date().toISOString()}"`,
+      '---',
+      '',
+      `# 📌 Sticky Memo ${idx + 1}`,
+      '',
+      `> [!note] Workspace Memo`,
+      `> Recorded in **[[00-Workspace-Index|${workspaceName}]]**`,
+      '',
+      s.text ? s.text.trim() : '*(Empty memo)*',
+      '',
+      '---',
+      `*BrainVault Memo #${idx + 1}*`,
+    ].join('\n');
+
+    files.push({
+      path: `Memos/memo-${idx + 1}.md`,
+      content: memoContent,
+    });
+  });
+
+  // 3. Hierarchical Constellation Tree for Index
+  const rootNodes = nodes.filter((n) => !n.parentId);
+  const orphanSubNodes = nodes.filter((n) => n.parentId && !byId.has(n.parentId));
+
+  function renderTree(node: GridNodeData, depth = 0): string {
+    const indent = '  '.repeat(depth);
+    const safeTitle = safeObsidianFilename(node.prompt);
+    const badge = node.isCustom ? '[Custom Note]' : node.parentId ? '[Sub-Node]' : '[Primary Root]';
+    const children = nodes.filter((c) => c.parentId === node.id);
+    let str = `${indent}- ${depth === 0 ? '🌿' : '🔗'} **[[Notes/${safeTitle}|${node.prompt}]]** \`${badge}\`\n`;
+    for (const child of children) {
+      str += renderTree(child, depth + 1);
+    }
+    return str;
+  }
+
+  let hierarchyMarkdownTree = '';
+  for (const root of rootNodes) {
+    hierarchyMarkdownTree += renderTree(root, 0);
+  }
+  if (orphanSubNodes.length) {
+    hierarchyMarkdownTree += '\n### Unattached Nodes\n';
+    for (const orphan of orphanSubNodes) {
+      hierarchyMarkdownTree += renderTree(orphan, 0);
+    }
+  }
+
+  // 4. Index Note (00-Workspace-Index.md)
+  const indexLines = [
+    '---',
+    `title: "${escapeYamlString(workspaceName)}"`,
+    `vault_type: "brainvault-obsidian-vault"`,
+    `total_nodes: ${nodes.length}`,
+    `total_stickies: ${stickyNotes.length}`,
+    `exported_at: "${new Date().toISOString()}"`,
+    'tags:',
+    '  - brainvault',
+    '  - knowledge-graph',
+    '  - obsidian-vault',
+    '  - index',
+    '---',
+    '',
+    `# 🧠 ${workspaceName} — Master Index & Knowledge Orbit`,
+    '',
+    `> **BrainVault Spatial Knowledge Engine** · Offline Obsidian Vault Archive  `,
+    `> Exported on **${new Date().toLocaleString()}** | Total Topics: **${nodes.length}** | Memos: **${stickyNotes.length}**`,
+    '',
+    '## 📊 Vault Structure Overview',
+    `- **📂 Notes/** — Individual concept cards with YAML frontmatter links (\`parent:\`, \`children:\`)`,
+    `- **📂 Memos/** — Floating sticky memos with frontmatter and tags`,
+    `- **📂 Canvas/** — Native \`BrainVault.canvas\` 2D spatial layout with visual node coordinates and connectors`,
+    `- **📂 .obsidian/** — Vault configuration with pre-styled Graph View colors and Properties types`,
+    '',
+    '## 🌳 Hierarchical Knowledge Tree',
+    hierarchyMarkdownTree || '*(No nodes recorded in this workspace)*',
+    '',
+    '## 📑 Master Catalog Table',
+    '| Concept Note | Hierarchy Type | Parent Branch | Sub-Branches |',
+    '|---|---|---|---|',
+    ...nodes.map((n) => {
+      const safeTitle = safeObsidianFilename(n.prompt);
+      const parentNode = n.parentId ? byId.get(n.parentId) : null;
+      const parentLink = parentNode ? `[[Notes/${safeObsidianFilename(parentNode.prompt)}|${parentNode.prompt}]]` : '*(Root)*';
+      const childCount = nodes.filter((c) => c.parentId === n.id).length;
+      const typeStr = n.isCustom ? 'Custom Note' : n.parentId ? 'Sub-Node' : 'Primary';
+      return `| [[Notes/${safeTitle}|${n.prompt}]] | \`${typeStr}\` | ${parentLink} | ${childCount} children |`;
+    }),
+    '',
+  ];
+
+  if (stickyNotes.length) {
+    indexLines.push(
+      '## 📝 Sticky Memos',
+      ...stickyNotes.map((s, idx) => `- [[Memos/memo-${idx + 1}|Memo ${idx + 1}]]: ${(s.text || '').replace(/\n/g, ' ').slice(0, 90)}...`),
+      ''
+    );
+  }
+
+  indexLines.push(
+    '## 🚀 Obsidian Quick-Start Guide',
+    '1. **Open in Obsidian**: Click *Open folder as vault* in Obsidian and select this unzipped folder.',
+    '2. **Interactive Canvas**: Open `Canvas/BrainVault.canvas` to see your 2D spatial cards arranged visually with directional arrows.',
+    '3. **Graph View**: Press `Ctrl+G` (or `Cmd+G` on Mac) to explore the full neural graph colored by hierarchy.',
+    '4. **Properties & Backlinks**: All notes include rich YAML frontmatter linking parent, child, and related notes.',
+    '',
+    '---',
+    `*Generated by BrainVault · Neural Spatial Knowledge & Cognitive OS*`
+  );
+
+  files.push({
+    path: '00-Workspace-Index.md',
+    content: indexLines.join('\n'),
+  });
+
+  // 5. Native Obsidian Visual Canvas (Canvas/BrainVault.canvas)
+  const canvasNodes: any[] = [];
+  const canvasEdges: any[] = [];
+
+  nodes.forEach((n, idx) => {
+    const safeTitle = safeObsidianFilename(n.prompt);
+    canvasNodes.push({
+      id: `node-${n.id || idx}`,
+      type: 'file',
+      file: `Notes/${safeTitle}.md`,
+      x: Math.round(n.x || (idx % 4) * 440),
+      y: Math.round(n.y || Math.floor(idx / 4) * 360),
+      width: Math.round(n.width || 420),
+      height: Math.round(n.height || 280),
+      color: n.parentId ? '4' : '2',
+    });
+
+    if (n.parentId && byId.has(n.parentId)) {
+      canvasEdges.push({
+        id: `edge-parent-${n.id}`,
+        fromNode: `node-${n.parentId}`,
+        fromSide: 'right',
+        toNode: `node-${n.id}`,
+        toSide: 'left',
+        color: '2',
+      });
+    }
+  });
+
+  stickyNotes.forEach((s, idx) => {
+    canvasNodes.push({
+      id: `sticky-${s.id || idx}`,
+      type: 'text',
+      text: s.text || 'Memo',
+      x: Math.round(s.x || idx * 260),
+      y: Math.round(s.y || -320),
+      width: 240,
+      height: 180,
+      color: '6',
+    });
+  });
+
+  files.push({
+    path: 'Canvas/BrainVault.canvas',
+    content: JSON.stringify({ nodes: canvasNodes, edges: canvasEdges }, null, 2),
+  });
+
+  // 6. Obsidian Configuration Files
+  files.push({
+    path: '.obsidian/app.json',
+    content: JSON.stringify(
+      {
+        attachmentFolderPath: 'Attachments',
+        newFileFolderPath: 'Notes',
+        livePreview: true,
+        showLineNumber: true,
+        foldHeading: true,
+        foldIndent: true,
+        readableLineLength: true,
+        strictLineBreaks: false,
+      },
+      null,
+      2
+    ),
+  });
+
+  files.push({
+    path: '.obsidian/graph.json',
+    content: JSON.stringify(
+      {
+        collapseFilter: false,
+        search: '',
+        colorGroups: [
+          { query: 'path:Notes "type: primary_node"', color: { a: 1, rgb: 65482 } },
+          { query: 'path:Notes "type: sub_node"', color: { a: 1, rgb: 3719160 } },
+          { query: 'path:Memos', color: { a: 1, rgb: 16439829 } },
+          { query: 'file:00-Workspace-Index', color: { a: 1, rgb: 12616956 } },
+        ],
+        lineSizeMultiplier: 1.5,
+        nodeSizeMultiplier: 1.25,
+      },
+      null,
+      2
+    ),
+  });
+
+  files.push({
+    path: '.obsidian/types.json',
+    content: JSON.stringify(
+      {
+        types: {
+          parent: 'link',
+          children: 'multitext',
+          hierarchy_level: 'number',
+          hierarchy_path: 'text',
+          tags: 'tags',
+          workspace: 'text',
+          created: 'datetime',
+        },
+      },
+      null,
+      2
+    ),
+  });
+
+  return createZipBlob(files);
+}
+
+export function downloadObsidianVaultZip(
+  nodes: GridNodeData[],
+  workspaceName: string = 'Current Workspace',
+  stickyNotes: StickyNoteData[] = []
+) {
+  const blob = generateObsidianVaultZip(nodes, workspaceName, stickyNotes);
+  const safeName = workspaceName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+  const filename = `brainvault-${safeName}-${new Date().toISOString().slice(0, 10)}-obsidian-vault.zip`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+

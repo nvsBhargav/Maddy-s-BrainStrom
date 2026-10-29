@@ -24,7 +24,8 @@ import {
   downloadPdfFile,
   downloadWordDoc,
   downloadWordDocx,
-  generatePdfBlobUrl
+  generatePdfBlobUrl,
+  downloadObsidianVaultZip
 } from '../exportUtils';
 import ReactMarkdown from 'react-markdown';
 
@@ -110,6 +111,10 @@ export const ReaderAndExportModal: React.FC<ReaderAndExportModalProps> = ({
     const md = generateMarkdown(nodes);
     const dateStr = new Date().toISOString().slice(0, 10);
     downloadFile(md, `maddys-brainvault-${workspaceName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${dateStr}.md`, 'text/markdown;charset=utf-8');
+  };
+
+  const handleDownloadObsidianVault = () => {
+    downloadObsidianVaultZip(nodes, workspaceName, stickyNotes);
   };
 
   const handleDownloadText = () => {
@@ -698,86 +703,128 @@ export const ReaderAndExportModal: React.FC<ReaderAndExportModalProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Markdown File (.md) */}
-                <div className="p-5 rounded-xl bg-[#14124a] border border-indigo-800/80 flex flex-col justify-between gap-4 hover:border-indigo-500 transition-colors">
+                {/* 1. Obsidian Vault (.zip) */}
+                <div className="p-5 rounded-xl bg-[#14124a] border border-purple-800/80 flex flex-col justify-between h-[265px] min-h-[265px] max-h-[265px] hover:border-purple-500 transition-all shadow-md">
                   <div>
-                    <div className="w-9 h-9 rounded-lg bg-[#8686AC] text-[#0F0E47] flex items-center justify-center font-bold mb-3">
-                      <FileText size={18} />
+                    <div className="w-9 h-9 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold mb-3 border border-purple-500/30">
+                      <Sparkles size={18} />
                     </div>
-                    <h4 className="font-bold text-white text-base">Markdown (.md)</h4>
-                    <p className="text-xs text-slate-300 leading-relaxed mt-1">
-                      Exports complete structured markdown with Table of Contents, headings, links, and notes. Perfect for Obsidian or Notion.
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-bold text-white text-base">Obsidian Vault (.zip)</h4>
+                      <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        FOLDER VAULT
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed mt-1 h-[36px] overflow-hidden line-clamp-2">
+                      Formatted Markdown folder structure with YAML frontmatter links, .canvas map, and sub-node hierarchy.
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="mt-auto">
+                    <button
+                      onClick={handleDownloadObsidianVault}
+                      className="w-full h-10 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-purple-900/30"
+                    >
+                      <Download size={14} />
+                      <span>Export Obsidian Vault (.zip)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Markdown File (.md) */}
+                <div className="p-5 rounded-xl bg-[#14124a] border border-indigo-800/80 flex flex-col justify-between h-[265px] min-h-[265px] max-h-[265px] hover:border-indigo-500 transition-all shadow-md">
+                  <div>
+                    <div className="w-9 h-9 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold mb-3 border border-indigo-500/30">
+                      <FileText size={18} />
+                    </div>
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-bold text-white text-base">Markdown Dossier (.md)</h4>
+                      <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        SINGLE FILE
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed mt-1 h-[36px] overflow-hidden line-clamp-2">
+                      Consolidated single Markdown document with YAML frontmatter, table of contents, and hierarchical wikilinks.
+                    </p>
+                  </div>
+                  <div className="flex gap-2 mt-auto">
                     <button
                       onClick={handleDownloadMarkdown}
-                      className="flex-1 py-2.5 bg-[#8686AC] hover:bg-[#9797bd] text-[#0F0E47] font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="flex-1 h-10 py-2.5 bg-[#8686AC] hover:bg-[#9797bd] text-[#0F0E47] font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <Download size={14} />
                       <span>Download .md</span>
                     </button>
-                    <label className="py-2.5 px-3 bg-indigo-900/60 hover:bg-indigo-800 text-slate-200 font-bold text-xs rounded-lg flex items-center justify-center gap-1 transition-colors border border-indigo-700/50 cursor-pointer" title="Import .md file to create nodes & sub-nodes">
+                    <label className="h-10 px-3 bg-indigo-900/60 hover:bg-indigo-800 text-slate-200 font-bold text-xs rounded-lg flex items-center justify-center gap-1 transition-colors border border-indigo-700/50 cursor-pointer" title="Import .md file to create nodes & sub-nodes">
                       <span>Import</span>
                       <input type="file" accept=".md" onChange={handleImportTextOrMarkdown} className="hidden" />
                     </label>
                   </div>
                 </div>
 
-                {/* Plain Text File (.txt) */}
-                <div className="p-5 rounded-xl bg-[#14124a] border border-indigo-800/80 flex flex-col justify-between gap-4 hover:border-indigo-500 transition-colors">
+                {/* 3. Plain Text File (.txt) */}
+                <div className="p-5 rounded-xl bg-[#14124a] border border-cyan-800/80 flex flex-col justify-between h-[265px] min-h-[265px] max-h-[265px] hover:border-cyan-500 transition-all shadow-md">
                   <div>
-                    <div className="w-9 h-9 rounded-lg bg-indigo-900 text-cyan-300 flex items-center justify-center font-bold mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold mb-3 border border-cyan-500/30">
                       <FileCode size={18} />
                     </div>
-                    <h4 className="font-bold text-white text-base">Plain Text (.txt)</h4>
-                    <p className="text-xs text-slate-300 leading-relaxed mt-1">
-                      A human-readable transcript formatted with ASCII dividers, ready to read in any text editor.
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-bold text-white text-base">Plain Text (.txt)</h4>
+                      <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        RAW TEXT
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed mt-1 h-[36px] overflow-hidden line-clamp-2">
+                      A human-readable transcript formatted with ASCII dividers, ready to read in any terminal or notes editor.
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 mt-auto">
                     <button
                       onClick={handleDownloadText}
-                      className="flex-1 py-2.5 bg-indigo-800/80 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="flex-1 h-10 py-2.5 bg-cyan-800/80 hover:bg-cyan-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <Download size={14} />
                       <span>Download .txt</span>
                     </button>
-                    <label className="py-2.5 px-3 bg-indigo-900/60 hover:bg-indigo-800 text-slate-200 font-bold text-xs rounded-lg flex items-center justify-center gap-1 transition-colors border border-indigo-700/50 cursor-pointer" title="Import .txt file to create nodes & sub-nodes">
+                    <label className="h-10 px-3 bg-indigo-900/60 hover:bg-indigo-800 text-slate-200 font-bold text-xs rounded-lg flex items-center justify-center gap-1 transition-colors border border-indigo-700/50 cursor-pointer" title="Import .txt file to create nodes & sub-nodes">
                       <span>Import</span>
                       <input type="file" accept=".txt" onChange={handleImportTextOrMarkdown} className="hidden" />
                     </label>
                   </div>
                 </div>
 
-                {/* Canvas Backup (.json) */}
-                <div className="p-5 rounded-xl bg-[#14124a] border border-indigo-800/80 flex flex-col justify-between gap-4 hover:border-indigo-500 transition-colors sm:col-span-2">
+                {/* 4. Canvas Backup (.json) */}
+                <div className="p-5 rounded-xl bg-[#14124a] border border-amber-800/80 flex flex-col justify-between h-[265px] min-h-[265px] max-h-[265px] hover:border-amber-500 transition-all shadow-md">
                   <div>
-                    <div className="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold mb-3 border border-amber-500/30">
                       <HardDrive size={18} />
                     </div>
-                    <h4 className="font-bold text-white text-base">Canvas Backup (.json)</h4>
-                    <p className="text-xs text-slate-300 leading-relaxed mt-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-bold text-white text-base">Canvas Backup (.json)</h4>
+                      <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        FULL BACKUP
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed mt-1 h-[36px] overflow-hidden line-clamp-2">
                       Full structured backup with node positions, colors, notes, and connections. Can be re-imported anytime.
                     </p>
                   </div>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-1 mt-auto">
                     <div className="flex gap-2">
                       <button
                         onClick={handleDownloadJSON}
-                        className="flex-1 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        className="flex-1 h-10 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Download size={14} />
                         <span>Backup JSON</span>
                       </button>
-                      <label className="py-2.5 px-4 bg-indigo-900/60 hover:bg-indigo-800 text-slate-200 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors border border-indigo-700/50 cursor-pointer">
-                        <span>Import Backup</span>
+                      <label className="h-10 px-4 bg-indigo-900/60 hover:bg-indigo-800 text-slate-200 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-colors border border-indigo-700/50 cursor-pointer">
+                        <span>Import</span>
                         <input type="file" accept=".json" onChange={handleFileImport} className="hidden" />
                       </label>
                     </div>
                     {importError && (
-                      <span className="text-[11px] font-mono text-rose-300 flex items-center gap-1">
-                        <AlertCircle size={12} /> {importError}
+                      <span className="text-[10px] font-mono text-rose-300 flex items-center gap-1">
+                        <AlertCircle size={11} /> {importError}
                       </span>
                     )}
                   </div>
